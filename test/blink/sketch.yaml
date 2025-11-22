@@ -1,0 +1,11 @@
+profiles:
+  ESP32-S3-R8N16:
+    fqbn: esp32:esp32:esp32s3:UploadSpeed=115200,USBMode=hwcdc,CDCOnBoot=cdc,MSCOnBoot=default,DFUOnBoot=default,UploadMode=cdc,CPUFreq=240,FlashMode=qio,FlashSize=16M,PartitionScheme=esp_sr_16,DebugLevel=none,PSRAM=opi,LoopCore=1,EventsCore=1,EraseFlash=none,JTAGAdapter=default,ZigbeeMode=default
+    platforms:
+      - platform: esp32:esp32 (3.3.4)
+    programmer: ""
+    port_config:
+      baudrate: "115200"
+      bits: "8"
+      parity: none
+      stop_bits: "1"
