@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" config init)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" core update-index)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" core install esp32:esp32@3.3.4)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" core list)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" lib search TFT_eSPI)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" lib install TFT_eSPI)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" lib list)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" lib search LovyanGFX)",
+      "Bash(\"c:/Users/fuzzy/.vscode/extensions/thelastoutpostworkshop.arduino-maker-workshop-1.0.6-win32-x64/arduino_cli/win32/arduino-cli.exe\" lib install LovyanGFX)",
+      "WebSearch"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
