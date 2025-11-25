@@ -16,13 +16,17 @@ private:
   
   Adafruit_SHT31 sht31;
   bool sensorInitialized;
+  bool hasValidSample;
   float lastTemperature;
   float lastHumidity;
+  unsigned long lastSensorSampleMs;
+  uint32_t sensorReadIntervalMs;
   
   // 서버 설정
   const char* serverURL;
   bool shouldUploadSensorData;  // 타이머 인터럽트에서 설정하는 플래그
   esp_timer_handle_t sensorUploadTimer;
+  uint64_t uploadIntervalUs;
   
   // DeviceID 참조
   DeviceID* deviceID;
@@ -36,6 +40,7 @@ public:
   
   // 센서 초기화
   bool init();
+  void update();
   
   // 센서 데이터 읽기
   bool readData();
@@ -51,6 +56,10 @@ public:
   
   // 서버로 데이터 전송 (loop()에서 호출)
   void processUpload();
+
+  // 주기 설정
+  void setSensorReadIntervalMs(uint32_t intervalMs);
+  void setUploadIntervalMs(uint32_t intervalMs);
 };
 
 #endif

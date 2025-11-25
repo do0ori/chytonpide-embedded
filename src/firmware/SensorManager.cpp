@@ -1,4 +1,5 @@
 #include "SensorManager.h"
+#include <ctype.h>
 
 // 정적 멤버 변수 (인스턴스 포인터 저장용)
 static SensorManager* sensorManagerInstance = nullptr;
@@ -6,13 +7,16 @@ static SensorManager* sensorManagerInstance = nullptr;
 SensorManager::SensorManager(const char* url, DeviceID* deviceId)
   : sht31(Adafruit_SHT31()),
     sensorInitialized(false),
-    lastTemperature(0.0),
-    lastHumidity(0.0),
+    hasValidSample(false),
+    lastTemperature(0.0f),
+    lastHumidity(0.0f),
+    lastSensorSampleMs(0),
+    sensorReadIntervalMs(2000),
     serverURL(url),
     shouldUploadSensorData(false),
-    sensorUploadTimer(NULL),
-    deviceID(deviceId)
-{
+    sensorUploadTimer(nullptr),
+    uploadIntervalUs(10ULL * 1000ULL * 1000ULL),
+    deviceID(deviceId) {
   sensorManagerInstance = this;
 }
 
@@ -27,11 +31,23 @@ bool SensorManager::init() {
   sensorInitialized = sht31.begin(0x44);
   
   if (sensorInitialized) {
-    // 초기 센서 읽기
     readData();
   }
   
   return sensorInitialized;
+}
+
+void SensorManager::update() {
+  if (!sensorInitialized) {
+    return;
+  }
+
+  unsigned long now = millis();
+  if (now - lastSensorSampleMs >= sensorReadIntervalMs) {
+    if (readData()) {
+      lastSensorSampleMs = now;
+    }
+  }
 }
 
 bool SensorManager::readData() {
@@ -42,17 +58,19 @@ bool SensorManager::readData() {
   float temperature = sht31.readTemperature();
   float humidity = sht31.readHumidity();
   
-  if (!isnan(temperature) && !isnan(humidity)) {
-    lastTemperature = temperature;
-    lastHumidity = humidity;
-    return true;
+  if (isnan(temperature) || isnan(humidity)) {
+    return false;
   }
-  
-  return false;
+
+  lastTemperature = temperature;
+  lastHumidity = humidity;
+  lastSensorSampleMs = millis();
+  hasValidSample = true;
+  return true;
 }
 
 void SensorManager::startUploadTimer() {
-  if (sensorUploadTimer != NULL) {
+  if (sensorUploadTimer != nullptr) {
     return;  // 이미 시작됨
   }
   
@@ -62,14 +80,14 @@ void SensorManager::startUploadTimer() {
   };
   
   esp_timer_create(&timer_args, &sensorUploadTimer);
-  esp_timer_start_periodic(sensorUploadTimer, 10 * 1000000ULL);  // 10초 (마이크로초 단위)
+  esp_timer_start_periodic(sensorUploadTimer, uploadIntervalUs);
 }
 
 void SensorManager::stopUploadTimer() {
-  if (sensorUploadTimer != NULL) {
+  if (sensorUploadTimer != nullptr) {
     esp_timer_stop(sensorUploadTimer);
     esp_timer_delete(sensorUploadTimer);
-    sensorUploadTimer = NULL;
+    sensorUploadTimer = nullptr;
   }
 }
 
@@ -85,9 +103,10 @@ void SensorManager::processUpload() {
   
   shouldUploadSensorData = false;  // 플래그 리셋
   
-  // 최신 센서 데이터 읽기
-  if (!readData()) {
-    return;  // 센서 읽기 실패
+  if (!hasValidSample) {
+    if (!readData()) {
+      return;
+    }
   }
   
   HTTPClient http;
@@ -109,12 +128,29 @@ void SensorManager::processUpload() {
   payload += "}";
   
   int httpCode = http.POST(payload);
-  
-  if (httpCode > 0 && httpCode < 300) {
-    // 성공 (로그는 생략, 필요시 추가 가능)
-  }
+  (void)httpCode;
   
   http.end();
+}
+
+void SensorManager::setSensorReadIntervalMs(uint32_t intervalMs) {
+  if (intervalMs == 0) {
+    return;
+  }
+  sensorReadIntervalMs = intervalMs;
+}
+
+void SensorManager::setUploadIntervalMs(uint32_t intervalMs) {
+  if (intervalMs == 0) {
+    return;
+  }
+
+  uploadIntervalUs = static_cast<uint64_t>(intervalMs) * 1000ULL;
+
+  if (sensorUploadTimer != nullptr) {
+    esp_timer_stop(sensorUploadTimer);
+    esp_timer_start_periodic(sensorUploadTimer, uploadIntervalUs);
+  }
 }
 
 // 정적 타이머 콜백 함수 (ISR에서 호출됨)
