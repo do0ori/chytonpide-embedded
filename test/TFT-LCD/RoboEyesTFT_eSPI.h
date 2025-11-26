@@ -6,23 +6,41 @@
 #define DEFAULT_BGCOLOR   TFT_BLACK
 #define DEFAULT_MAINCOLOR TFT_WHITE
 
-#define DEFAULT   0
-#define TIRED     1
-#define ANGRY     2
-#define HAPPY     3
-#define SAD       4  // 새 감정 추가 예시
+#define DEFAULT    0
+#define TIRED      1
+#define ANGRY      2
+#define HAPPY      3
+#define SAD        4
+#define SURPRISED  5
+#define CALM       6
 
 #define ON  1
 #define OFF 0
 
-#define N   1
-#define NE  2
-#define E   3
-#define SE  4
-#define S   5
-#define SW  6
-#define W   7
-#define NW  8
+// 눈 모양 타입 정의
+// 사용 예시:
+//   eyes.setEyeShape(EYE_SHAPE_CIRCLE, EYE_SHAPE_CIRCLE);  // 양쪽 모두 원형
+//   eyes.setEyeShape(EYE_SHAPE_ROUND_RECT, EYE_SHAPE_CAPSULE_V);  // 왼쪽은 둥근 사각형, 오른쪽은 세로 캡슐형
+//   eyes.setMood(ANGRY);  // 감정 설정 시 자동으로 적절한 눈 모양 적용
+#define EYE_SHAPE_ROUND_RECT            0  // 기본 둥근 사각형
+#define EYE_SHAPE_CIRCLE                1  // 원형
+#define EYE_SHAPE_CAPSULE_V             2  // 세로 캡슐형
+#define EYE_SHAPE_WIDE                  3  // 넓은 눈 (놀란 눈)
+#define EYE_SHAPE_NARROW                4  // 좁은 눈 (졸린 눈)
+#define EYE_SHAPE_CAPSULE_V_SLANT_LEFT  5  // 세로 캡슐 + 왼쪽이 낮아지는 사선
+#define EYE_SHAPE_CAPSULE_V_SLANT_RIGHT 6  // 세로 캡슐 + 오른쪽이 낮아지는 사선
+#define EYE_SHAPE_CAPSULE_V_ARCH        7  // 세로 캡슐 상단만 남긴 아치형 (행복)
+
+// 방향 매크로 (mbedtls와의 충돌 방지를 위해 EYE_DIR_ 접두사 사용)
+// HTTPClient가 mbedtls를 포함하므로 단일 문자 매크로는 사용하지 않음
+#define EYE_DIR_N   1
+#define EYE_DIR_NE  2
+#define EYE_DIR_E   3
+#define EYE_DIR_SE  4
+#define EYE_DIR_S   5
+#define EYE_DIR_SW  6
+#define EYE_DIR_W   7
+#define EYE_DIR_NW  8
 
 class TFT_RoboEyes {
   public:
@@ -51,12 +69,14 @@ class TFT_RoboEyes {
     int eyeLwidthNext, eyeLheightNext;
     int eyeLheightOffset;
     uint8_t eyeLborderRadiusDefault, eyeLborderRadiusCurrent, eyeLborderRadiusNext;
+    uint8_t eyeLshapeType, eyeLshapeTypeNext;  // 왼쪽 눈 모양 타입
 
     int eyeRwidthDefault, eyeRheightDefault;
     int eyeRwidthCurrent, eyeRheightCurrent;
     int eyeRwidthNext, eyeRheightNext;
     int eyeRheightOffset;
     uint8_t eyeRborderRadiusDefault, eyeRborderRadiusCurrent, eyeRborderRadiusNext;
+    uint8_t eyeRshapeType, eyeRshapeTypeNext;  // 오른쪽 눈 모양 타입
 
     int eyeLxDefault, eyeLyDefault;
     int eyeLx, eyeLy;
@@ -139,6 +159,7 @@ class TFT_RoboEyes {
       eyeLborderRadiusDefault = 8;
       eyeLborderRadiusCurrent = eyeLborderRadiusDefault;
       eyeLborderRadiusNext = eyeLborderRadiusDefault;
+      eyeLshapeType = eyeLshapeTypeNext = EYE_SHAPE_ROUND_RECT;
 
       eyeRwidthDefault = eyeLwidthDefault;
       eyeRheightDefault = eyeLheightDefault;
@@ -150,6 +171,7 @@ class TFT_RoboEyes {
       eyeRborderRadiusDefault = 8;
       eyeRborderRadiusCurrent = eyeRborderRadiusDefault;
       eyeRborderRadiusNext = eyeRborderRadiusDefault;
+      eyeRshapeType = eyeRshapeTypeNext = EYE_SHAPE_ROUND_RECT;
 
       spaceBetweenDefault = 10;
       spaceBetweenCurrent = spaceBetweenDefault;
@@ -280,12 +302,50 @@ class TFT_RoboEyes {
       updateEyePositions();  // 간격 변경 후 위치 재계산
     }
 
+    void setEyeShape(uint8_t leftShape, uint8_t rightShape) {
+      eyeLshapeTypeNext = leftShape;
+      eyeRshapeTypeNext = rightShape;
+    }
+
     void setMood(uint8_t mood) {
       tired = angry = happy = sad = false;
-      if (mood == TIRED) tired = true;
-      else if (mood == ANGRY) angry = true;
-      else if (mood == HAPPY) happy = true;
-      else if (mood == SAD) sad = true;  // 새 감정 처리 추가
+
+      switch (mood) {
+        case TIRED:
+          tired = true;
+          setEyeShape(EYE_SHAPE_NARROW, EYE_SHAPE_NARROW);  // 졸린 눈 - 좁은 눈
+          break;
+
+        case ANGRY:
+          angry = true;
+          // 화난 눈: 왼쪽은 오른쪽이 낮아지고, 오른쪽은 왼쪽이 낮아짐 (안쪽으로 모임)
+          setEyeShape(EYE_SHAPE_CAPSULE_V_SLANT_RIGHT, EYE_SHAPE_CAPSULE_V_SLANT_LEFT);
+          break;
+
+        case HAPPY:
+          happy = true;
+          setEyeShape(EYE_SHAPE_CAPSULE_V_ARCH, EYE_SHAPE_CAPSULE_V_ARCH);  // 즐거운 눈 - 아치형
+          break;
+
+        case SAD:
+          sad = true;
+          // 슬픈 눈: 왼쪽은 왼쪽이 낮아지고, 오른쪽은 오른쪽이 낮아짐 (바깥쪽으로 처짐)
+          setEyeShape(EYE_SHAPE_CAPSULE_V_SLANT_LEFT, EYE_SHAPE_CAPSULE_V_SLANT_RIGHT);
+          break;
+
+        case SURPRISED:
+          setEyeShape(EYE_SHAPE_CIRCLE, EYE_SHAPE_CIRCLE);  // 놀란 눈 - 원형
+          break;
+
+        case CALM:
+          setEyeShape(EYE_SHAPE_CAPSULE_V, EYE_SHAPE_CAPSULE_V);  // 차분한 눈 - 세로 캡슐
+          break;
+
+        case DEFAULT:
+        default:
+          setEyeShape(EYE_SHAPE_ROUND_RECT, EYE_SHAPE_ROUND_RECT);  // 기본 둥근 사각형
+          break;
+      }
     }
 
     void setAutoblinker(bool active, int interval = 1, int variation = 4) {
@@ -346,6 +406,100 @@ class TFT_RoboEyes {
       eyeRborderRadiusNext = eyeRborderRadiusDefault;
     }
 
+    void drawEyeShape(int x, int y, int width, int height, uint8_t shapeType, uint8_t borderRadius, uint16_t color) {
+      int centerX = x + width / 2;
+      int centerY = y + height / 2;
+      int radius = min(width, height) / 2;
+
+      switch (shapeType) {
+        case EYE_SHAPE_CIRCLE:
+          sprite->fillCircle(centerX, centerY, radius, color);
+          break;
+
+        case EYE_SHAPE_CAPSULE_V:
+          // 세로 캡슐형 (상하 원 + 사각형) - 두 원의 중심 거리가 지름
+          {
+            int capsuleRadius = width / 2;  // 가로 방향이 반지름
+            int diameter = width;  // 지름 = width
+            int topCircleY = y + capsuleRadius;
+            int bottomCircleY = topCircleY + diameter;  // 두 원의 중심 거리 = 지름
+
+            sprite->fillCircle(centerX, topCircleY, capsuleRadius, color);
+            sprite->fillCircle(centerX, bottomCircleY, capsuleRadius, color);
+            sprite->fillRect(x, topCircleY, width, diameter, color);  // 가운데 사각형 한 변 = 지름
+          }
+          break;
+
+        case EYE_SHAPE_CAPSULE_V_SLANT_LEFT:
+        case EYE_SHAPE_CAPSULE_V_SLANT_RIGHT:
+          // 세로 캡슐형 상단을 사선으로 잘라 감정을 표현 - 두 원의 중심 거리가 지름
+          {
+            int capsuleRadius = width / 2;
+            int diameter = width;  // 지름 = width
+            int topCircleY = y + capsuleRadius;
+            int bottomCircleY = topCircleY + diameter;  // 두 원의 중심 거리 = 지름
+
+            sprite->fillCircle(centerX, topCircleY, capsuleRadius, color);
+            sprite->fillCircle(centerX, bottomCircleY, capsuleRadius, color);
+            sprite->fillRect(x, topCircleY, width, diameter, color);  // 가운데 사각형 한 변 = 지름
+
+            int slantHeight = max(4, height / 2);
+            if (shapeType == EYE_SHAPE_CAPSULE_V_SLANT_LEFT) {
+              // 왼쪽이 낮아지는 사선
+              sprite->fillTriangle(
+                x, y,
+                x, y + slantHeight,
+                x + width, y,
+                bgColor
+              );
+            } else {
+              // 오른쪽이 낮아지는 사선
+              sprite->fillTriangle(
+                x + width, y,
+                x + width, y + slantHeight,
+                x, y,
+                bgColor
+              );
+            }
+          }
+          break;
+
+        case EYE_SHAPE_CAPSULE_V_ARCH:
+          // 세로 캡슐형에서 아래쪽 원을 제거해 아치 형태를 만듦 (행복)
+          {
+            int capsuleRadius = width / 2;
+            int diameter = width;
+            int topCircleY = y + capsuleRadius;
+            int bottomCircleY = topCircleY + diameter;
+
+            // 전체 세로 캡슐 먼저 그리기
+            sprite->fillCircle(centerX, topCircleY, capsuleRadius, color);
+            sprite->fillCircle(centerX, bottomCircleY, capsuleRadius, color);
+            sprite->fillRect(x, topCircleY, width, diameter, color);
+
+            // 아래쪽 원 영역과 그 아래를 배경색으로 덮어 아치 형태로 만들기
+            sprite->fillCircle(centerX, bottomCircleY, capsuleRadius, bgColor);
+          }
+          break;
+
+        case EYE_SHAPE_WIDE:
+          // 넓은 눈 (놀란 눈)
+          sprite->fillRoundRect(x, y, width, height * 3 / 4, borderRadius, color);
+          break;
+
+        case EYE_SHAPE_NARROW:
+          // 좁은 눈 (졸린 눈)
+          sprite->fillRoundRect(x, y + height / 4, width, height / 2, borderRadius, color);
+          break;
+
+        case EYE_SHAPE_ROUND_RECT:
+        default:
+          // 기본 둥근 사각형
+          sprite->fillRoundRect(x, y, width, height, borderRadius, color);
+          break;
+      }
+    }
+
     void drawEyes() {
       if (curious) {
         eyeLheightOffset = (eyeLxNext <= 10) ? 8 : 0;
@@ -380,6 +534,10 @@ class TFT_RoboEyes {
 
       eyeLborderRadiusCurrent = (eyeLborderRadiusCurrent + eyeLborderRadiusNext) / 2;
       eyeRborderRadiusCurrent = (eyeRborderRadiusCurrent + eyeRborderRadiusNext) / 2;
+
+      // 눈 모양 타입 부드럽게 전환
+      eyeLshapeType = eyeLshapeTypeNext;
+      eyeRshapeType = eyeRshapeTypeNext;
 
       if (autoblinker && !blinkingActive) {
         if (millis() >= blinktimer) {
@@ -447,17 +605,21 @@ class TFT_RoboEyes {
 
       sprite->fillSprite(bgColor);
 
-      sprite->fillRoundRect(
+      // 왼쪽 눈 그리기
+      drawEyeShape(
         eyeLx, eyeLy,
         eyeLwidthCurrent, eyeLheightCurrent,
+        eyeLshapeType,
         eyeLborderRadiusCurrent,
         mainColor
       );
 
+      // 오른쪽 눈 그리기 (사이클롭스 모드가 아닐 때)
       if (!cyclops) {
-        sprite->fillRoundRect(
+        drawEyeShape(
           eyeRx, eyeRy,
           eyeRwidthCurrent, eyeRheightCurrent,
+          eyeRshapeType,
           eyeRborderRadiusCurrent,
           mainColor
         );
@@ -467,13 +629,6 @@ class TFT_RoboEyes {
       eyelidsAngryHeight = (eyelidsAngryHeight + eyelidsAngryHeightNext) / 2;
       eyelidsHappyBottomOffset = (eyelidsHappyBottomOffset + eyelidsHappyBottomOffsetNext) / 2;
       eyelidsSadTopOffset = (eyelidsSadTopOffset + eyelidsSadTopOffsetNext) / 2;
-      
-      // SAD 감정: 슬픈 눈 표현 (위쪽 눈꺼풀을 내려서 눈을 반쯤 가림)
-      if (sad) {
-        eyelidsSadTopOffsetNext = eyeLheightDefault / 2 + 2;
-      } else {
-        eyelidsSadTopOffsetNext = 0;
-      }
 
       sprite->fillTriangle(
         eyeLx, eyeLy - 1,
@@ -518,26 +673,9 @@ class TFT_RoboEyes {
         eyeRborderRadiusCurrent,
         bgColor
       );
-
-      // SAD 감정: 위쪽 눈꺼풀을 내려서 눈을 반쯤 가림
-      if (eyelidsSadTopOffset > 0) {
-        sprite->fillRoundRect(
-          eyeLx - 1,
-          eyeLy - 1,
-          eyeLwidthCurrent + 2, eyelidsSadTopOffset + 2,
-          eyeLborderRadiusCurrent,
-          bgColor
-        );
-        sprite->fillRoundRect(
-          eyeRx - 1,
-          eyeRy - 1,
-          eyeRwidthCurrent + 2, eyelidsSadTopOffset + 2,
-          eyeRborderRadiusCurrent,
-          bgColor
-        );
-      }
     }
 
 };
 
 #endif
+
