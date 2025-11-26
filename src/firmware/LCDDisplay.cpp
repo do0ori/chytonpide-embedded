@@ -184,8 +184,8 @@ void initRoboEyes() {
     roboEyes.setAutoblinker(true, 2, 1);
     roboEyes.setIdleMode(true, 4, 1, 15, 15);  // 가운데 기준 ±15픽셀 범위
     
-    // 기본 감정 설정 (HAPPY)
-    roboEyes.setMood(HAPPY);
+    // 기본 감정 설정 (DEFAULT) - 나중에 STT/TTS/LLM에서 감정을 받아서 설정할 예정
+    roboEyes.setMood(DEFAULT);
     
     roboEyesInitialized = true;
   }
