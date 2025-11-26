@@ -13,16 +13,18 @@ struct MoodPreset {
   uint8_t eyeWidth;
   uint8_t eyeHeight;
   uint8_t borderRadius;
+  int spaceBetween;  // 눈 사이 거리
 };
 
 const MoodPreset moodTests[] = {
-  {DEFAULT,    TFT_WHITE,   TFT_BLACK, 60, 60, 12},
-  {TIRED,      TFT_ORANGE,  TFT_BLACK, 80, 30, 10},
-  {HAPPY,      TFT_GREEN,   TFT_BLACK, 40, 90, 20},
-  {ANGRY,      TFT_RED,     TFT_BLACK, 40, 90, 20},
-  {SAD,        TFT_SKYBLUE, TFT_BLACK, 40, 90, 20},
-  {SURPRISED,  TFT_CYAN,    TFT_BLACK, 60, 60, 30},
-  {CALM,       TFT_BLUE,    TFT_BLACK, 40, 90, 20},
+  // mood, color, bgColor, eyeW, eyeH, borderRadius, spaceBetween
+  {DEFAULT,    TFT_WHITE,   TFT_BLACK, 60, 60, 12, 50},  // 기본
+  {TIRED,      TFT_ORANGE,  TFT_BLACK, 80, 30, 10, 40},  // 졸린 눈
+  {HAPPY,      TFT_GREEN,   TFT_BLACK, 40, 90, 20, 60},  // 즐거운 눈
+  {ANGRY,      TFT_RED,     TFT_BLACK, 40, 90, 20, 55},  // 화난 눈
+  {SAD,        TFT_SKYBLUE, TFT_BLACK, 40, 90, 20, 55},  // 슬픈 눈
+  {SURPRISED,  TFT_CYAN,    TFT_BLACK, 60, 60, 30, 70},  // 놀란 눈
+  {CALM,       TFT_BLUE,    TFT_BLACK, 40, 90, 20, 55},  // 차분한 눈
 };
 
 const size_t moodTestCount = sizeof(moodTests) / sizeof(moodTests[0]);
@@ -36,6 +38,7 @@ void applyMoodPreset(size_t index) {
   roboEyes.setWidth(preset.eyeWidth, preset.eyeWidth);
   roboEyes.setHeight(preset.eyeHeight, preset.eyeHeight);
   roboEyes.setBorderradius(preset.borderRadius, preset.borderRadius);
+  roboEyes.setSpacebetween(preset.spaceBetween);  // 각 감정마다 눈 사이 거리 설정
   roboEyes.setMood(preset.mood);
 }
 
@@ -48,9 +51,6 @@ void setup() {
 
   // 50 FPS
   roboEyes.begin(50);
-
-  // 눈 크기, 위치 (가로용)
-  roboEyes.setSpacebetween(40);  // 가로형 화면은 눈 사이 조금 더 넓게
 
   // 자동 깜빡임 + idle (마지막 두 파라미터: X축 범위, Y축 범위)
   roboEyes.setAutoblinker(true, 2, 1);

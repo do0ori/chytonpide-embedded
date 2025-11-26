@@ -31,6 +31,12 @@
 #define EYE_SHAPE_CAPSULE_V_SLANT_RIGHT 6  // 세로 캡슐 + 오른쪽이 낮아지는 사선
 #define EYE_SHAPE_CAPSULE_V_ARCH        7  // 세로 캡슐 상단만 남긴 아치형 (행복)
 
+// 입 모양 타입 정의
+#define MOUTH_NONE    0  // 입 없음
+#define MOUTH_SMILE   1  // 웃는 입 (아치형)
+#define MOUTH_O       2  // O자형 입
+#define MOUTH_LINE    3  // -자형 입 (직선)
+
 // 방향 매크로 (mbedtls와의 충돌 방지를 위해 EYE_DIR_ 접두사 사용)
 // HTTPClient가 mbedtls를 포함하므로 단일 문자 매크로는 사용하지 않음
 #define EYE_DIR_N   1
@@ -93,6 +99,11 @@ class TFT_RoboEyes {
     uint8_t eyelidsHappyBottomOffset, eyelidsHappyBottomOffsetNext;
     uint8_t eyelidsSadTopOffset, eyelidsSadTopOffsetNext;  // SAD 감정용: 위쪽 눈꺼풀 오프셋
     int spaceBetweenDefault, spaceBetweenCurrent, spaceBetweenNext;
+    
+    // 입 관련 변수
+    uint8_t mouthType, mouthTypeNext;  // 입 모양 타입
+    int mouthYOffset;  // 눈 아래로부터의 거리
+    int mouthWidth;  // 입 너비
 
     bool hFlicker;
     bool hFlickerAlternate;
@@ -197,6 +208,10 @@ class TFT_RoboEyes {
       eyelidsHappyBottomOffsetMax = eyeLheightDefault / 2 + 3;
       eyelidsHappyBottomOffset = eyelidsHappyBottomOffsetNext = 0;
       eyelidsSadTopOffset = eyelidsSadTopOffsetNext = 0;  // SAD 감정 초기화
+      
+      mouthType = mouthTypeNext = MOUTH_NONE;
+      mouthYOffset = 20;  // 눈 아래로부터 20픽셀
+      mouthWidth = 30;  // 기본 입 너비
 
       hFlicker = vFlicker = confused = laugh = false;
       hFlickerAlternate = vFlickerAlternate = true;
@@ -307,6 +322,18 @@ class TFT_RoboEyes {
       eyeRshapeTypeNext = rightShape;
     }
 
+    void setMouth(uint8_t mouth) {
+      mouthTypeNext = mouth;
+    }
+    
+    void setMouthYOffset(int offset) {
+      mouthYOffset = offset;
+    }
+    
+    void setMouthWidth(int width) {
+      mouthWidth = width;
+    }
+
     void setMood(uint8_t mood) {
       tired = angry = happy = sad = false;
 
@@ -314,36 +341,43 @@ class TFT_RoboEyes {
         case TIRED:
           tired = true;
           setEyeShape(EYE_SHAPE_NARROW, EYE_SHAPE_NARROW);  // 졸린 눈 - 좁은 눈
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
 
         case ANGRY:
           angry = true;
           // 화난 눈: 왼쪽은 오른쪽이 낮아지고, 오른쪽은 왼쪽이 낮아짐 (안쪽으로 모임)
           setEyeShape(EYE_SHAPE_CAPSULE_V_SLANT_RIGHT, EYE_SHAPE_CAPSULE_V_SLANT_LEFT);
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
 
         case HAPPY:
           happy = true;
           setEyeShape(EYE_SHAPE_CAPSULE_V_ARCH, EYE_SHAPE_CAPSULE_V_ARCH);  // 즐거운 눈 - 아치형
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
 
         case SAD:
           sad = true;
           // 슬픈 눈: 왼쪽은 왼쪽이 낮아지고, 오른쪽은 오른쪽이 낮아짐 (바깥쪽으로 처짐)
           setEyeShape(EYE_SHAPE_CAPSULE_V_SLANT_LEFT, EYE_SHAPE_CAPSULE_V_SLANT_RIGHT);
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
 
         case SURPRISED:
           setEyeShape(EYE_SHAPE_CIRCLE, EYE_SHAPE_CIRCLE);  // 놀란 눈 - 원형
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
 
         case CALM:
           setEyeShape(EYE_SHAPE_CAPSULE_V, EYE_SHAPE_CAPSULE_V);  // 차분한 눈 - 세로 캡슐
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
 
         case DEFAULT:
         default:
           setEyeShape(EYE_SHAPE_ROUND_RECT, EYE_SHAPE_ROUND_RECT);  // 기본 둥근 사각형
+          setMouth(MOUTH_NONE);  // 입 없음
           break;
       }
     }
@@ -673,6 +707,60 @@ class TFT_RoboEyes {
         eyeRborderRadiusCurrent,
         bgColor
       );
+
+      // 입 그리기
+      mouthType = mouthTypeNext;
+      if (mouthType != MOUTH_NONE) {
+        drawMouth();
+      }
+    }
+    
+    void drawMouth() {
+      // 입 위치: 두 눈 사이 중앙, 눈 아래로 mouthYOffset 픽셀
+      int mouthCenterX = (eyeLx + eyeLwidthCurrent + eyeRx) / 2;
+      int mouthY = max(eyeLy, eyeRy) + eyeLheightDefault + mouthYOffset;
+      int mouthHeight = 8;  // 입 높이
+      
+      switch (mouthType) {
+        case MOUTH_SMILE:
+          // 웃는 입 (아치형) - 아래로 볼록한 호 (fillRoundRect로 근사)
+          {
+            int arcHeight = mouthHeight / 2;
+            sprite->fillRoundRect(
+              mouthCenterX - mouthWidth / 2,
+              mouthY,
+              mouthWidth,
+              arcHeight,
+              arcHeight,  // borderRadius를 arcHeight로 설정하여 아래쪽만 둥글게
+              mainColor
+            );
+          }
+          break;
+          
+        case MOUTH_O:
+          // O자형 입 (타원형) - fillCircle 사용
+          {
+            int radius = min(mouthWidth / 2, mouthHeight / 2);
+            sprite->fillCircle(mouthCenterX, mouthY + mouthHeight / 2, radius, mainColor);
+            // 안쪽을 배경색으로 채워서 O자형 만들기
+            sprite->fillCircle(mouthCenterX, mouthY + mouthHeight / 2, radius - 2, bgColor);
+          }
+          break;
+          
+        case MOUTH_LINE:
+          // -자형 입 (직선)
+          sprite->fillRect(
+            mouthCenterX - mouthWidth / 2,
+            mouthY + mouthHeight / 2 - 1,
+            mouthWidth,
+            3,
+            mainColor
+          );
+          break;
+          
+        default:
+          break;
+      }
     }
 
 };
