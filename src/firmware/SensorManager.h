@@ -23,7 +23,8 @@ private:
   uint32_t sensorReadIntervalMs;
   
   // 서버 설정
-  const char* serverURL;
+  const char* serverBaseURL;
+  const char* sensorEndpoint;
   bool shouldUploadSensorData;  // 타이머 인터럽트에서 설정하는 플래그
   esp_timer_handle_t sensorUploadTimer;
   uint64_t uploadIntervalUs;
@@ -35,7 +36,7 @@ private:
   static void IRAM_ATTR timerCallback(void* arg);
   
 public:
-  SensorManager(const char* url, DeviceID* deviceId);
+  SensorManager(const char* baseUrl, const char* endpoint, DeviceID* deviceId);
   ~SensorManager();
   
   // 센서 초기화

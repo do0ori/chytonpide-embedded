@@ -26,7 +26,6 @@ class RelayLedController {
   void setCheckInterval(unsigned long intervalMs) { checkIntervalMs = intervalMs; }
 
  private:
-  String deviceId;
   const char* serverBaseUrl;
   const char* ledStateEndpoint;
   DeviceID* device;

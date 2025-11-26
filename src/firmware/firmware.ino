@@ -11,9 +11,9 @@
 #include "RelayLedController.h"
 
 // 주기 설정 (밀리초)
-const uint32_t SENSOR_READ_INTERVAL_MS = 2000;      // 2초마다 센서 데이터 읽기
-const uint32_t SENSOR_UPLOAD_INTERVAL_MS = 300000;  // 5분마다 센서 데이터 업로드
-const uint32_t LED_CHECK_INTERVAL_MS = 2000;        // 2초마다 LED 상태 확인
+const uint32_t SENSOR_READ_INTERVAL_MS = 10000;      // 10초마다 센서 데이터 읽기
+const uint32_t SENSOR_UPLOAD_INTERVAL_MS = 60000;  // 1분마다 센서 데이터 업로드
+const uint32_t LED_CHECK_INTERVAL_MS = 1000;        // 1초마다 LED 상태 확인
 
 WiFiManager wifiManager;
 TFT_eSPI tft = TFT_eSPI();
@@ -24,13 +24,16 @@ WifiState currentState = WIFI_CONNECTING;
 WifiState lastDisplayedState = WIFI_ERROR;
 bool bootButtonPressed = false;
 
-// 서버 URL (ngrok 등 외부 서버)
-const char* SERVER_BASE_URL = "https://2542c3beade0.ngrok-free.app";
-const char* SENSOR_SERVER_URL = "https://2542c3beade0.ngrok-free.app/sensor/data";
+// 서버 URL 및 엔드포인트
+const char* SERVER_BASE_URL = "https://chytonpide.azurewebsites.net";
+const char* SENSOR_ENDPOINT = "/sensor_data";
 const char* LED_STATE_ENDPOINT = "/led/state";
 
+// 프로토타입 고정 시리얼 ID
+const char* PROTOTYPE_SERIAL_ID = "xJN2wsF850yqWQfBUkGP";
+
 // 센서/LED 컨트롤러
-SensorManager sensorManager(SENSOR_SERVER_URL, &deviceID);
+SensorManager sensorManager(SERVER_BASE_URL, SENSOR_ENDPOINT, &deviceID);
 RelayLedController relayLedController(SERVER_BASE_URL, LED_STATE_ENDPOINT, &deviceID);
 
 // 릴레이 핀 (테스트/프로토타입용)
@@ -54,6 +57,10 @@ void setup() {
   initLCD();
   printLCD(10, 100, "Initializing...", TFT_WHITE, 2);
   delay(500);
+
+  // 항상 부팅 시 커스텀 ID 초기화 후 필요한 경우 재설정
+  deviceID.clearCustomID();
+  deviceID.setCustomID(PROTOTYPE_SERIAL_ID);
 
   // 센서/릴레이 모듈 초기화
   if (sensorManager.init()) {

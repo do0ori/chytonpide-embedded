@@ -11,9 +11,6 @@ RelayLedController::RelayLedController(const char* baseUrl, const char* stateEnd
     initialized(false),
     lastCheckTime(0),
     checkIntervalMs(2000) {
-  if (device) {
-    deviceId = device->getID();
-  }
 }
 
 void RelayLedController::begin(uint8_t relayPin, uint8_t comPin) {
@@ -56,7 +53,12 @@ void RelayLedController::update() {
 }
 
 void RelayLedController::fetchAndApplyLedState() {
-  if (deviceId.length() == 0 || !serverBaseUrl || !ledStateEndpoint) {
+  if (!device || !serverBaseUrl || !ledStateEndpoint) {
+    return;
+  }
+
+  String deviceId = device->getID();
+  if (deviceId.length() == 0) {
     return;
   }
 

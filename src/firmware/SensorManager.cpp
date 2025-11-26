@@ -4,7 +4,9 @@
 // 정적 멤버 변수 (인스턴스 포인터 저장용)
 static SensorManager* sensorManagerInstance = nullptr;
 
-SensorManager::SensorManager(const char* url, DeviceID* deviceId)
+static constexpr const char* DEFAULT_ILLUMINANCE_VALUE = "0";
+
+SensorManager::SensorManager(const char* baseUrl, const char* endpoint, DeviceID* deviceId)
   : sht31(Adafruit_SHT31()),
     sensorInitialized(false),
     hasValidSample(false),
@@ -12,7 +14,8 @@ SensorManager::SensorManager(const char* url, DeviceID* deviceId)
     lastHumidity(0.0f),
     lastSensorSampleMs(0),
     sensorReadIntervalMs(2000),
-    serverURL(url),
+    serverBaseURL(baseUrl),
+    sensorEndpoint(endpoint),
     shouldUploadSensorData(false),
     sensorUploadTimer(nullptr),
     uploadIntervalUs(10ULL * 1000ULL * 1000ULL),
@@ -109,23 +112,27 @@ void SensorManager::processUpload() {
     }
   }
   
+  if (!serverBaseURL || !sensorEndpoint) {
+    return;
+  }
+
   HTTPClient http;
-  http.begin(serverURL);
-  http.addHeader("Content-Type", "application/json");
+  String url = String(serverBaseURL) + sensorEndpoint;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
   
   // Device ID 가져오기
   String deviceIdentifier = deviceID->getID();
   
-  // JSON 페이로드 생성
-  String payload = "{";
-  payload += "\"temperature\":";
-  payload += String(lastTemperature, 2);
-  payload += ",\"humidity\":";
-  payload += String(lastHumidity, 2);
-  payload += ",\"device_id\":\"";
+  // form 데이터 생성
+  String payload = "serial=";
   payload += deviceIdentifier;
-  payload += "\"";
-  payload += "}";
+  payload += "&temperature=";
+  payload += String(lastTemperature, 2);
+  payload += "&humidity=";
+  payload += String(lastHumidity, 2);
+  payload += "&illuminance=";
+  payload += DEFAULT_ILLUMINANCE_VALUE;
   
   int httpCode = http.POST(payload);
   (void)httpCode;
