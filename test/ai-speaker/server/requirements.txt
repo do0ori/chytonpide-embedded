@@ -1,0 +1,6 @@
+pydub
+gTTS
+python-dotenv
+openai-whisper
+openai
+azure-identity
