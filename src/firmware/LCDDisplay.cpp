@@ -172,19 +172,17 @@ void initRoboEyes() {
     // 50 FPS - TFT-LCD.ino와 동일
     roboEyes.begin(50);
     
-    roboEyes.setColors(TFT_WHITE, TFT_BLACK);
-    
-    // 눈 크기, 위치 (가로용) - TFT-LCD.ino와 동일
-    roboEyes.setWidth(60, 60);
-    roboEyes.setHeight(60, 60);
-    roboEyes.setSpacebetween(40);  // 가로형 화면은 눈 사이 조금 더 넓게
-    roboEyes.setBorderradius(10, 10);
-    
     // 자동 깜빡임 + idle (마지막 두 파라미터: X축 범위, Y축 범위) - TFT-LCD.ino와 동일
     roboEyes.setAutoblinker(true, 2, 1);
     roboEyes.setIdleMode(true, 4, 1, 15, 15);  // 가운데 기준 ±15픽셀 범위
     
-    // 기본 감정 설정 (DEFAULT) - 나중에 STT/TTS/LLM에서 감정을 받아서 설정할 예정
+    // 기본 감정 설정 (DEFAULT MoodPreset 적용) - FaceEmotionController에서 업데이트될 예정
+    // TFT-LCD.ino의 DEFAULT preset: TFT_WHITE, TFT_BLACK, 60, 60, 12, 50
+    roboEyes.setColors(TFT_WHITE, TFT_BLACK);
+    roboEyes.setWidth(60, 60);
+    roboEyes.setHeight(60, 60);
+    roboEyes.setBorderradius(12, 12);
+    roboEyes.setSpacebetween(50);
     roboEyes.setMood(DEFAULT);
     
     roboEyesInitialized = true;

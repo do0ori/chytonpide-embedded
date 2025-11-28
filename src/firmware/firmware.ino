@@ -9,11 +9,13 @@
 #include "RoboEyesTFT_eSPI.h"
 #include "SensorManager.h"
 #include "RelayLedController.h"
+#include "FaceEmotionController.h"
 
 // 주기 설정 (밀리초)
 const uint32_t SENSOR_READ_INTERVAL_MS = 10000;      // 10초마다 센서 데이터 읽기
 const uint32_t SENSOR_UPLOAD_INTERVAL_MS = 60000;  // 1분마다 센서 데이터 업로드
 const uint32_t LED_CHECK_INTERVAL_MS = 1000;        // 1초마다 LED 상태 확인
+const uint32_t FACE_EMOTION_CHECK_INTERVAL_MS = 2000;  // 2초마다 Face Emotion 상태 확인
 
 WiFiManager wifiManager;
 TFT_eSPI tft = TFT_eSPI();
@@ -25,16 +27,19 @@ WifiState lastDisplayedState = WIFI_ERROR;
 bool bootButtonPressed = false;
 
 // 서버 URL 및 엔드포인트
-const char* SERVER_BASE_URL = "https://chytonpide.azurewebsites.net";
+// const char* SERVER_BASE_URL = "https://chytonpide.azurewebsites.net";
+const char* SERVER_BASE_URL = "https://e636bde32245.ngrok-free.app";
 const char* SENSOR_ENDPOINT = "/sensor_data";
-const char* LED_STATE_ENDPOINT = "/led/state";
+const char* LED_STATE_ENDPOINT = "/led";
+const char* FACE_EMOTION_ENDPOINT = "/face_emotion";
 
 // 프로토타입 고정 시리얼 ID
 const char* PROTOTYPE_SERIAL_ID = "xJN2wsF850yqWQfBUkGP";
 
-// 센서/LED 컨트롤러
+// 센서/LED/Face Emotion 컨트롤러
 SensorManager sensorManager(SERVER_BASE_URL, SENSOR_ENDPOINT, &deviceID);
 RelayLedController relayLedController(SERVER_BASE_URL, LED_STATE_ENDPOINT, &deviceID);
+FaceEmotionController faceEmotionController(SERVER_BASE_URL, FACE_EMOTION_ENDPOINT, &deviceID, &roboEyes);
 
 // 릴레이 핀 (테스트/프로토타입용)
 const uint8_t RELAY_SIGNAL_PIN = 48;
@@ -53,14 +58,32 @@ IPAddress gateway(192, 168, 4, 1);
 IPAddress subnet(255, 255, 255, 0);
 
 void setup() {
+  Serial.begin(115200);
+  delay(100);
+  
+  // 프로토타입 고정 시리얼 ID 설정 (가장 먼저 설정)
+  // 기존 ID가 있으면 먼저 삭제
+  deviceID.clearCustomID();
+  delay(50);
+  
+  // 새 ID 설정
+  bool success = deviceID.setCustomID(PROTOTYPE_SERIAL_ID);
+  Serial.print("[DeviceID] Set custom ID result: ");
+  Serial.println(success ? "SUCCESS" : "FAILED");
+  
+  // 디버깅: 설정된 ID 확인
+  String currentId = deviceID.getID();
+  Serial.print("[DeviceID] Current ID: ");
+  Serial.println(currentId);
+  Serial.print("[DeviceID] Expected ID: ");
+  Serial.println(PROTOTYPE_SERIAL_ID);
+  Serial.print("[DeviceID] ID matches: ");
+  Serial.println(currentId == PROTOTYPE_SERIAL_ID ? "YES" : "NO");
+  
   // LCD 초기화
   initLCD();
   printLCD(10, 100, "Initializing...", TFT_WHITE, 2);
   delay(500);
-
-  // 항상 부팅 시 커스텀 ID 초기화 후 필요한 경우 재설정
-  deviceID.clearCustomID();
-  deviceID.setCustomID(PROTOTYPE_SERIAL_ID);
 
   // 센서/릴레이 모듈 초기화
   if (sensorManager.init()) {
@@ -69,6 +92,7 @@ void setup() {
   }
   relayLedController.begin(RELAY_SIGNAL_PIN, RELAY_COM_PIN);
   relayLedController.setCheckInterval(LED_CHECK_INTERVAL_MS);
+  faceEmotionController.setCheckInterval(FACE_EMOTION_CHECK_INTERVAL_MS);
 
   // GPIO 0 (BOOT 버튼) 설정
   pinMode(0, INPUT_PULLUP);
@@ -155,6 +179,9 @@ void loop() {
 
   // LED 상태 동기화
   relayLedController.update();
+
+  // Face Emotion 상태 동기화
+  faceEmotionController.update();
 
   delay(10);  // CPU 부하 감소
 }

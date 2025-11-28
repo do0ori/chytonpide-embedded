@@ -37,6 +37,7 @@ private:
 
 public:
   DeviceID() {
+    // read-write 모드로 열어야 setCustomID()가 작동함
     preferences.begin(NAMESPACE, false);
   }
   
@@ -65,7 +66,7 @@ public:
   bool setCustomID(const String& customId) {
     if (customId.length() == 0) {
       // 빈 문자열이면 사용자 정의 ID 삭제
-      return preferences.remove(KEY_CUSTOM_ID);
+      return clearCustomID();
     }
     
     // ID 유효성 검사 (예: 최대 32자, 영숫자와 하이픈만 허용)
@@ -80,7 +81,12 @@ public:
       }
     }
     
-    return preferences.putString(KEY_CUSTOM_ID, customId);
+    // 기존 값이 있으면 먼저 삭제
+    preferences.remove(KEY_CUSTOM_ID);
+    
+    // 새 값 저장
+    size_t written = preferences.putString(KEY_CUSTOM_ID, customId);
+    return (written > 0);
   }
   
   // 사용자 정의 ID 삭제 (하드웨어 ID로 되돌림)
