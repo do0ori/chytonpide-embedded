@@ -136,31 +136,116 @@ class YoutubeAIspeakerAudioReciver(ESP32TCPAudioRecv):
 
     def start(self):
         global trynum
+        macaddress = b""
+        filename = ""
         try:
-            macaddress = ""
             while True:
                 signal, validData = self.recv_exact21024()
                 if signal == self.SIGNAL_MAC:
-                    self.mkWaveFile(validData)
                     macaddress = validData
-                if signal == self.SIGNAL_END:
-                    self.wav_file.close()
+                    mac_str = "".join("{:02X}".format(b) for b in validData)
+                    filename = f"{mac_str}.wav"
+                    print(f"[STT] MAC 주소 수신: {mac_str}, 파일명: {filename}")
+                    self.mkWaveFile(validData)
+                    print(f"[STT] WAV 파일 생성됨: {filename}")
+                elif signal == self.SIGNAL_END:
+                    print(f"[STT] 종료 신호 수신, filename: {filename}")
+                    if self.wav_file:
+                        self.wav_file.close()
+                        print("[STT] WAV 파일 닫힘")
                     break
-                if 0 < signal <= 1024:
-                    amplified_data = self.amplify_audio_data(validData, 10)
-                    self.wav_file.writeframes(amplified_data)
+                elif 0 < signal <= 1024:
+                    if self.wav_file:
+                        amplified_data = self.amplify_audio_data(validData, 10)
+                        self.wav_file.writeframes(amplified_data)
+                        print(f"[STT] 오디오 데이터 수신: {len(amplified_data)} bytes")
+                    else:
+                        print("[STT] 경고: wav_file이 None입니다!")
 
             # 위스퍼 문자열생성
-            result = self.model.transcribe("ECDA3B45E7A0.wav")
-            print(result["text"])
-            print(self.work_list)
+            print(f"[STT] Whisper 시작, filename: '{filename}'")
+            if filename:
+                # 파일 크기 확인
+                import os
 
-            self.update_work_list(macaddress, result["text"])
-            self.send_21024(len(result["text"].encode()), result["text"].encode())
+                if os.path.exists(filename):
+                    file_size = os.path.getsize(filename)
+                    print(f"오디오 파일: {filename}, 크기: {file_size} bytes")
+
+                    if file_size < 1000:  # 1KB 미만이면 너무 작음
+                        print("경고: 오디오 파일이 너무 작습니다.")
+                        result_text = ""
+                    else:
+                        # WAV 파일 정보 확인
+                        try:
+                            with wave.open(filename, "rb") as wf_check:
+                                frames = wf_check.getnframes()
+                                duration = frames / wf_check.getframerate()
+                                print(
+                                    f"  WAV 정보: {wf_check.getframerate()}Hz, {wf_check.getnchannels()}ch, {wf_check.getsampwidth()*8}bit"
+                                )
+                                print(
+                                    f"  프레임: {frames}, 예상 길이: {duration:.2f}초"
+                                )
+                        except Exception as e:
+                            print(f"  WAV 파일 읽기 실패: {e}")
+
+                        print("  Whisper 전사 시작...")
+                        try:
+                            result = self.model.transcribe(
+                                filename,
+                                language="ko",  # 한국어 명시
+                                task="transcribe",
+                                verbose=False,
+                                fp16=False,  # CPU에서는 FP32 사용
+                            )
+                            result_text = result.get("text", "").strip()
+                            print(f"  Whisper 원본 결과 키: {list(result.keys())}")
+                            print(f"  Whisper 결과 텍스트: '{result_text}'")
+
+                            if not result_text:
+                                print("  ⚠️ 경고: Whisper가 빈 결과를 반환했습니다.")
+                                print("  가능한 원인:")
+                                print("    - 오디오가 무음이거나 볼륨이 너무 낮음")
+                                print("    - 실제 음성이 포함되지 않음")
+                                print("    - 파일 손상")
+
+                                # segments 정보 확인
+                                if "segments" in result:
+                                    print(f"  세그먼트 수: {len(result['segments'])}")
+                                    if result["segments"]:
+                                        print(f"  첫 세그먼트: {result['segments'][0]}")
+                        except Exception as e:
+                            print(f"  Whisper 실행 중 에러: {e}")
+                            import traceback
+
+                            traceback.print_exc()
+                            result_text = ""
+                else:
+                    print(f"오류: 파일이 존재하지 않습니다: {filename}")
+                    result_text = ""
+
+                print(f"work_list: {self.work_list}")
+
+                self.update_work_list(macaddress, result_text)
+                # 빈 문자열이어도 전송 (클라이언트가 처리)
+                response_text = result_text if result_text else "(인식되지 않음)"
+                self.send_21024(len(response_text.encode()), response_text.encode())
+            else:
+                print("오류: WAV 파일이 생성되지 않았습니다.")
+                self.send_21024(0, b"ERROR: No audio file received".encode())
 
         except Exception as e:
             print(f"Error: {e}")
+            import traceback
+
+            traceback.print_exc()
         finally:
+            if self.wav_file:
+                try:
+                    self.wav_file.close()
+                except Exception:
+                    pass
             self.close()
 
     def update_work_list(self, macaddress, text=None):
