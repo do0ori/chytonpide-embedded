@@ -14,7 +14,7 @@ def set_led_state(
     device_id="0000541217D9B4DC", led_on=True, server_url="http://localhost:8000"
 ):
     """LED 상태를 설정하는 함수"""
-    url = f"{server_url}/led/set"
+    url = f"{server_url}/led"
     payload = {"device_id": device_id, "led_on": led_on}
 
     try:
