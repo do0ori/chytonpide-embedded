@@ -86,12 +86,35 @@ public:
     
     // 새 값 저장
     size_t written = preferences.putString(KEY_CUSTOM_ID, customId);
-    return (written > 0);
+    
+    // Preferences를 닫았다가 다시 열어서 플래시에 저장 보장
+    // (end()를 호출하면 자동으로 커밋됨)
+    preferences.end();
+    delay(10);  // 플래시 쓰기 완료 대기
+    preferences.begin(NAMESPACE, false);
+    
+    // 저장이 제대로 되었는지 확인
+    String savedId = preferences.getString(KEY_CUSTOM_ID, "");
+    bool saved = (savedId == customId);
+    
+    return (written > 0 && saved);
   }
   
   // 사용자 정의 ID 삭제 (하드웨어 ID로 되돌림)
   bool clearCustomID() {
-    return preferences.remove(KEY_CUSTOM_ID);
+    bool result = preferences.remove(KEY_CUSTOM_ID);
+    
+    // Preferences를 닫았다가 다시 열어서 플래시에 저장 보장
+    // (end()를 호출하면 자동으로 커밋됨)
+    preferences.end();
+    delay(10);  // 플래시 쓰기 완료 대기
+    preferences.begin(NAMESPACE, false);
+    
+    // 삭제가 제대로 되었는지 확인
+    String savedId = preferences.getString(KEY_CUSTOM_ID, "");
+    bool cleared = (savedId.length() == 0);
+    
+    return (result && cleared);
   }
   
   // 사용자 정의 ID가 설정되어 있는지 확인

@@ -28,7 +28,7 @@ bool bootButtonPressed = false;
 
 // 서버 URL 및 엔드포인트
 // const char* SERVER_BASE_URL = "https://chytonpide.azurewebsites.net";
-const char* SERVER_BASE_URL = "https://e636bde32245.ngrok-free.app";
+const char* SERVER_BASE_URL = "https://afe9f8286d68.ngrok-free.app";
 const char* SENSOR_ENDPOINT = "/sensor_data";
 const char* LED_STATE_ENDPOINT = "/led";
 const char* FACE_EMOTION_ENDPOINT = "/face_emotion";
@@ -67,18 +67,7 @@ void setup() {
   delay(50);
   
   // 새 ID 설정
-  bool success = deviceID.setCustomID(PROTOTYPE_SERIAL_ID);
-  Serial.print("[DeviceID] Set custom ID result: ");
-  Serial.println(success ? "SUCCESS" : "FAILED");
-  
-  // 디버깅: 설정된 ID 확인
-  String currentId = deviceID.getID();
-  Serial.print("[DeviceID] Current ID: ");
-  Serial.println(currentId);
-  Serial.print("[DeviceID] Expected ID: ");
-  Serial.println(PROTOTYPE_SERIAL_ID);
-  Serial.print("[DeviceID] ID matches: ");
-  Serial.println(currentId == PROTOTYPE_SERIAL_ID ? "YES" : "NO");
+  deviceID.setCustomID(PROTOTYPE_SERIAL_ID);
   
   // LCD 초기화
   initLCD();

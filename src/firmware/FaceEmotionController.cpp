@@ -170,14 +170,17 @@ String FaceEmotionController::urlEncode(const String& raw) const {
   for (size_t i = 0; i < raw.length(); ++i) {
     char c = raw.charAt(i);
     if (isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.' || c == '~') {
+      // 안전한 문자는 그대로 유지 (대소문자 보존)
       encoded += c;
     } else {
+      // 특수 문자는 퍼센트 인코딩 (HEX는 대문자로 변환)
       encoded += '%';
       if ((uint8_t)c < 0x10) encoded += '0';
-      encoded += String(static_cast<uint8_t>(c), HEX);
+      String hex = String(static_cast<uint8_t>(c), HEX);
+      hex.toUpperCase();
+      encoded += hex;
     }
   }
-  encoded.toUpperCase();
   return encoded;
 }
 
