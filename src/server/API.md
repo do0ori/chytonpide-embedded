@@ -96,153 +96,114 @@ curl -X POST "http://localhost:8000/sensor_data" \
 
 ---
 
-### 3. LED 제어
+### 3. 디바이스 제어
 
-디바이스의 LED 상태를 설정하거나 조회합니다.
+디바이스의 LED 및 LCD(Face Emotion) 상태를 조회하거나 업데이트합니다.
 
-#### 3.1 LED 상태 설정
+#### 3.1 LED 상태 조회
 
-**`POST /led`**
+**`GET /devices/:serial/led`**
 
-#### 요청 헤더
+#### Path Parameters
 
-```
-Content-Type: application/json
-```
-
-#### 요청 Body
-
-```json
-{
-  "device_id": "0000541217D9B4DC",
-  "led_on": true
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-|-----|------|------|------|
-| `device_id` | string | ✅ | 디바이스 ID |
-| `led_on` | boolean | ✅ | LED 상태 (`true`: ON, `false`: OFF) |
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| `serial` | string | ✅ | 디바이스 시리얼 ID (예: `xJN2wsF850yqWQfBUkGP`) |
 
 #### 요청 예시
 
 ```bash
-curl -X POST "http://localhost:8000/led" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device_id": "0000541217D9B4DC",
-    "led_on": true
-  }'
+curl "http://localhost:8000/devices/xJN2wsF850yqWQfBUkGP/led"
 ```
 
 #### 응답
 
 ```json
 {
-  "status": "success",
-  "message": "LED state updated",
-  "led_state": {
-    "device_id": "0000541217D9B4DC",
-    "led_on": true,
-    "updated_at": "2024-01-15T10:30:00.123456"
-  }
+  "is_led_on": true,
+  "updated_at": "2025-11-29T11:50:00.123456+09:00"
 }
 ```
 
-#### 3.2 LED 상태 조회
-
-**`GET /led`**
-
-#### Query Parameters
-
-| 파라미터 | 타입 | 필수 | 설명 |
-|---------|------|------|------|
-| `device_id` | string | ❌ | 조회할 디바이스 ID (없으면 모든 디바이스 조회) |
-
-#### 요청 예시
-
-**특정 디바이스 조회:**
-```bash
-curl "http://localhost:8000/led?device_id=0000541217D9B4DC"
-```
-
-**모든 디바이스 조회:**
-```bash
-curl "http://localhost:8000/led"
-```
-
-#### 응답 (특정 디바이스)
-
-```json
-{
-  "status": "success",
-  "led_state": {
-    "device_id": "0000541217D9B4DC",
-    "led_on": false,
-    "updated_at": "2024-01-15T10:30:00.123456"
-  }
-}
-```
-
-#### 응답 (모든 디바이스)
-
-```json
-{
-  "status": "success",
-  "led_states": {
-    "0000541217D9B4DC": {
-      "led_on": true,
-      "updated_at": "2024-01-15T10:30:00.123456"
-    },
-    "ESP32-S3-001": {
-      "led_on": false,
-      "updated_at": "2024-01-15T10:25:00.123456"
-    }
-  }
-}
-```
-
-**참고**: LED 상태가 설정되지 않은 디바이스는 기본값(`led_on: false`)을 반환합니다.
+**참고**: LED 상태가 설정되지 않은 디바이스는 기본값(`is_led_on: false`)을 반환합니다.
 
 ---
 
-### 4. Face Emotion
+#### 3.2 LCD Face Emotion 상태 조회
 
-디바이스의 표정(감정) 상태를 설정하거나 조회합니다.
+**`GET /devices/:serial/lcd`**
 
-#### 4.1 Face Emotion 설정
+#### Path Parameters
 
-**`POST /face_emotion`**
-
-#### 요청 헤더
-
-```
-Content-Type: application/json
-```
-
-#### 요청 Body
-
-```json
-{
-  "device_id": "0000541217D9B4DC",
-  "emotion": "HAPPY"
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-|-----|------|------|------|
-| `device_id` | string | ✅ | 디바이스 ID |
-| `emotion` | string | ✅ | 감정 상태 (자유 형식 텍스트, 예: `"HAPPY"`, `"SAD"`, `"NEUTRAL"`, `"ANGRY"` 등) |
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| `serial` | string | ✅ | 디바이스 시리얼 ID (예: `xJN2wsF850yqWQfBUkGP`) |
 
 #### 요청 예시
 
 ```bash
-curl -X POST "http://localhost:8000/face_emotion" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "device_id": "0000541217D9B4DC",
-    "emotion": "HAPPY"
-  }'
+curl "http://localhost:8000/devices/xJN2wsF850yqWQfBUkGP/lcd"
+```
+
+#### 응답
+
+```json
+{
+  "face": "HAPPY",
+  "updated_at": "2025-11-29T11:50:00.123456+09:00"
+}
+```
+
+**참고**: Face Emotion 상태가 설정되지 않은 디바이스는 기본값(`face: "NEUTRAL"`)을 반환합니다.
+
+---
+
+#### 3.3 디바이스 상태 업데이트
+
+**`PATCH /devices/:serial`**
+
+#### Path Parameters
+
+| 파라미터 | 타입 | 필수 | 설명 |
+|---------|------|------|------|
+| `serial` | string | ✅ | 디바이스 시리얼 ID (예: `xJN2wsF850yqWQfBUkGP`) |
+
+#### 요청 헤더
+
+```
+Content-Type: application/x-www-form-urlencoded
+```
+
+#### Form Data
+
+| 필드 | 타입 | 필수 | 설명 |
+|-----|------|------|------|
+| `is_led_on` | string | ❌ | LED 상태 (`"true"` 또는 `"false"`) |
+| `led_face` | string | ❌ | Face Emotion 상태 (예: `"HAPPY"`, `"SAD"`, `"NEUTRAL"`, `"ANGRY"` 등) |
+
+**참고**: 두 필드 모두 선택사항이며, 전송한 필드만 업데이트됩니다.
+
+#### 요청 예시
+
+**LED만 업데이트:**
+```bash
+curl -X PATCH "http://localhost:8000/devices/xJN2wsF850yqWQfBUkGP" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "is_led_on=true"
+```
+
+**Face Emotion만 업데이트:**
+```bash
+curl -X PATCH "http://localhost:8000/devices/xJN2wsF850yqWQfBUkGP" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "led_face=HAPPY"
+```
+
+**둘 다 업데이트:**
+```bash
+curl -X PATCH "http://localhost:8000/devices/xJN2wsF850yqWQfBUkGP" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "is_led_on=true&led_face=HAPPY"
 ```
 
 #### 응답
@@ -250,69 +211,11 @@ curl -X POST "http://localhost:8000/face_emotion" \
 ```json
 {
   "status": "success",
-  "message": "Face emotion state updated",
-  "face_emotion_state": {
-    "device_id": "0000541217D9B4DC",
-    "emotion": "HAPPY",
-    "updated_at": "2024-01-15T10:30:00.123456"
-  }
+  "message": "Device updated",
+  "serial": "xJN2wsF850yqWQfBUkGP",
+  "updated_fields": ["LED: ON", "Face: HAPPY"]
 }
 ```
-
-#### 4.2 Face Emotion 조회
-
-**`GET /face_emotion`**
-
-#### Query Parameters
-
-| 파라미터 | 타입 | 필수 | 설명 |
-|---------|------|------|------|
-| `device_id` | string | ❌ | 조회할 디바이스 ID (없으면 모든 디바이스 조회) |
-
-#### 요청 예시
-
-**특정 디바이스 조회:**
-```bash
-curl "http://localhost:8000/face_emotion?device_id=0000541217D9B4DC"
-```
-
-**모든 디바이스 조회:**
-```bash
-curl "http://localhost:8000/face_emotion"
-```
-
-#### 응답 (특정 디바이스)
-
-```json
-{
-  "status": "success",
-  "face_emotion_state": {
-    "device_id": "0000541217D9B4DC",
-    "emotion": "NEUTRAL",
-    "updated_at": "2024-01-15T10:30:00.123456"
-  }
-}
-```
-
-#### 응답 (모든 디바이스)
-
-```json
-{
-  "status": "success",
-  "face_emotion_states": {
-    "0000541217D9B4DC": {
-      "emotion": "HAPPY",
-      "updated_at": "2024-01-15T10:30:00.123456"
-    },
-    "ESP32-S3-001": {
-      "emotion": "SAD",
-      "updated_at": "2024-01-15T10:25:00.123456"
-    }
-  }
-}
-```
-
-**참고**: Face Emotion 상태가 설정되지 않은 디바이스는 기본값(`emotion: "NEUTRAL"`)을 반환합니다.
 
 ---
 
@@ -324,23 +227,20 @@ API 테스트를 위한 Python 스크립트가 제공됩니다.
 
 ```bash
 # LED 켜기
-python src/server/set_led.py 0000541217D9B4DC true
+python src/server/set_led.py xJN2wsF850yqWQfBUkGP true
 
 # LED 끄기
-python src/server/set_led.py 0000541217D9B4DC false
+python src/server/set_led.py xJN2wsF850yqWQfBUkGP false
 ```
 
 ### Face Emotion 제어
 
 ```bash
 # Face Emotion 설정
-python src/server/set_face_emotion.py 0000541217D9B4DC HAPPY
+python src/server/set_face_emotion.py xJN2wsF850yqWQfBUkGP HAPPY
 
 # Face Emotion 조회
-python src/server/set_face_emotion.py 0000541217D9B4DC --get
-
-# 모든 디바이스 조회
-python src/server/set_face_emotion.py --get
+python src/server/set_face_emotion.py xJN2wsF850yqWQfBUkGP --get
 ```
 
 ---
@@ -393,9 +293,10 @@ python main.py
 ## 참고사항
 
 - 센서 데이터는 `application/x-www-form-urlencoded` 형식으로만 전송됩니다.
-- LED 및 Face Emotion API는 `application/json` 형식입니다.
-- 모든 타임스탬프는 ISO 8601 형식(`YYYY-MM-DDTHH:mm:ss.ssssss`)입니다.
+- 디바이스 업데이트 API는 `application/x-www-form-urlencoded` 형식입니다.
+- 모든 타임스탬프는 ISO 8601 형식(`YYYY-MM-DDTHH:mm:ss.ssssss+09:00`)입니다.
 - 상태가 설정되지 않은 디바이스는 기본값을 반환합니다:
-  - LED: `led_on: false`
-  - Face Emotion: `emotion: "NEUTRAL"`
+  - LED: `is_led_on: false`
+  - Face Emotion: `face: "NEUTRAL"`
+- 디바이스 시리얼 ID는 프로토타입의 경우 `xJN2wsF850yqWQfBUkGP`를 사용합니다.
 

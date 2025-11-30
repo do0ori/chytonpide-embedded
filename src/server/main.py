@@ -2,26 +2,16 @@ from datetime import datetime
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, Form
+from fastapi import FastAPI, Form, Path
 from pydantic import BaseModel
 
 app = FastAPI(title="Citonphyde Sensor Server", version="1.0.0")
 
-# LED 상태 저장 (device_id별로 관리, serial/device_id 모두 지원)
+# LED 상태 저장 (serial별로 관리)
 led_states = {}
 
-# Face Emotion 상태 저장 (device_id별로 관리)
+# Face Emotion 상태 저장 (serial별로 관리)
 face_emotion_states = {}
-
-
-class LEDStateRequest(BaseModel):
-    device_id: str
-    led_on: bool
-
-
-class FaceEmotionRequest(BaseModel):
-    device_id: str
-    emotion: str  # 자유 형식 텍스트 (예: "HAPPY", "SAD", "NEUTRAL" 등)
 
 
 @app.get("/")
@@ -32,10 +22,9 @@ async def root():
         "endpoints": {
             "POST /sensor_data": "Send sensor data (temperature, humidity, serial, illuminance)",
             "GET /health": "Health check",
-            "POST /led": "Set LED state (on/off)",
-            "GET /led": "Get LED state",
-            "POST /face_emotion": "Set face emotion (free text format)",
-            "GET /face_emotion": "Get face emotion state",
+            "GET /devices/:serial/led": "Get LED state",
+            "GET /devices/:serial/lcd": "Get LCD face emotion state",
+            "PATCH /devices/:serial": "Update device (is_led_on, led_face)",
         },
     }
 
@@ -90,163 +79,100 @@ async def receive_sensor_data(
     }
 
 
-@app.post("/led")
-async def set_led_state(request: LEDStateRequest):
-    """
-    LED 상태를 설정하는 엔드포인트
-
-    Request Body:
-    {
-        "device_id": "ESP32-S3-001",
-        "led_on": true  // true: 켜기, false: 끄기
-    }
-    """
-    # LED 상태 저장
-    led_states[request.device_id] = {
-        "led_on": request.led_on,
-        "updated_at": datetime.now().isoformat(),
-    }
-
-    # 로그 출력
-    print("=" * 50)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] LED 상태 설정")
-    print(f"  Device ID: {request.device_id}")
-    print(f"  LED 상태: {'ON' if request.led_on else 'OFF'}")
-    print("=" * 50)
-
-    return {
-        "status": "success",
-        "message": "LED state updated",
-        "led_state": {
-            "device_id": request.device_id,
-            "led_on": request.led_on,
-            "updated_at": led_states[request.device_id]["updated_at"],
-        },
-    }
-
-
-@app.get("/led")
-async def get_led_state(device_id: Optional[str] = None):
+@app.get("/devices/{serial}/led")
+async def get_led_state(serial: str = Path(..., description="Device serial ID")):
     """
     LED 상태를 조회하는 엔드포인트
 
-    Query Parameters:
-    - device_id: 조회할 디바이스 ID (선택사항, 없으면 모든 디바이스 상태 반환)
+    Path Parameters:
+    - serial: 디바이스 시리얼 ID (예: "xJN2wsF850yqWQfBUkGP")
     """
-    if device_id:
-        # 특정 디바이스의 LED 상태 조회
-        # firmware에서 요청할 때 device_id가 없으면 기본값(false) 반환
-        if device_id not in led_states:
-            # LED 상태가 설정되지 않았으면 기본값(off) 반환
-            return {
-                "status": "success",
-                "led_state": {
-                    "device_id": device_id,
-                    "led_on": False,  # 기본값: 꺼짐
-                    "updated_at": datetime.now().isoformat(),
-                },
-            }
-
-        state = led_states[device_id]
+    # LED 상태가 설정되지 않았으면 기본값(off) 반환
+    if serial not in led_states:
         return {
-            "status": "success",
-            "led_state": {
-                "device_id": device_id,
-                "led_on": state["led_on"],
-                "updated_at": state["updated_at"],
-            },
-        }
-    else:
-        # 모든 디바이스의 LED 상태 조회
-        return {
-            "status": "success",
-            "led_states": {
-                device_id: {
-                    "led_on": state["led_on"],
-                    "updated_at": state["updated_at"],
-                }
-                for device_id, state in led_states.items()
-            },
+            "is_led_on": False,  # 기본값: 꺼짐
+            "updated_at": datetime.now().isoformat(),
         }
 
-
-@app.post("/face_emotion")
-async def set_face_emotion(request: FaceEmotionRequest):
-    """
-    Face Emotion 상태를 설정하는 엔드포인트
-
-    Request Body:
-    {
-        "device_id": "ESP32-S3-001",
-        "emotion": "HAPPY"  // 자유 형식 텍스트 (예: "HAPPY", "SAD", "NEUTRAL", "ANGRY" 등)
+    state = led_states[serial]
+    return {
+        "is_led_on": state["is_led_on"],
+        "updated_at": state["updated_at"],
     }
+
+
+@app.get("/devices/{serial}/lcd")
+async def get_lcd_state(serial: str = Path(..., description="Device serial ID")):
     """
-    # Face Emotion 상태 저장
-    face_emotion_states[request.device_id] = {
-        "emotion": request.emotion,
-        "updated_at": datetime.now().isoformat(),
+    LCD Face Emotion 상태를 조회하는 엔드포인트
+
+    Path Parameters:
+    - serial: 디바이스 시리얼 ID (예: "xJN2wsF850yqWQfBUkGP")
+    """
+    # Face Emotion 상태가 설정되지 않았으면 기본값("NEUTRAL") 반환
+    if serial not in face_emotion_states:
+        return {
+            "face": "NEUTRAL",  # 기본값
+            "updated_at": datetime.now().isoformat(),
+        }
+
+    state = face_emotion_states[serial]
+    return {
+        "face": state["face"],
+        "updated_at": state["updated_at"],
     }
+
+
+@app.patch("/devices/{serial}")
+async def update_device(
+    serial: str = Path(..., description="Device serial ID"),
+    is_led_on: Optional[str] = Form(None),
+    led_face: Optional[str] = Form(None),
+):
+    """
+    디바이스 상태를 업데이트하는 엔드포인트
+
+    Path Parameters:
+    - serial: 디바이스 시리얼 ID (예: "xJN2wsF850yqWQfBUkGP")
+
+    Form Data:
+    - is_led_on: LED 상태 ("true" 또는 "false", 선택사항)
+    - led_face: Face Emotion 상태 (예: "HAPPY", "SAD", "NEUTRAL", 선택사항)
+    """
+    updated_fields = []
+
+    # LED 상태 업데이트
+    if is_led_on is not None:
+        led_on_bool = is_led_on.lower() in ("true", "1", "on", "yes")
+        led_states[serial] = {
+            "is_led_on": led_on_bool,
+            "updated_at": datetime.now().isoformat(),
+        }
+        updated_fields.append(f"LED: {'ON' if led_on_bool else 'OFF'}")
+
+    # Face Emotion 상태 업데이트
+    if led_face is not None:
+        face_emotion_states[serial] = {
+            "face": led_face,
+            "updated_at": datetime.now().isoformat(),
+        }
+        updated_fields.append(f"Face: {led_face}")
 
     # 로그 출력
-    print("=" * 50)
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Face Emotion 상태 설정")
-    print(f"  Device ID: {request.device_id}")
-    print(f"  Emotion: {request.emotion}")
-    print("=" * 50)
+    if updated_fields:
+        print("=" * 50)
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 디바이스 상태 업데이트")
+        print(f"  Serial: {serial}")
+        for field in updated_fields:
+            print(f"  {field}")
+        print("=" * 50)
 
     return {
         "status": "success",
-        "message": "Face emotion state updated",
-        "face_emotion_state": {
-            "device_id": request.device_id,
-            "emotion": request.emotion,
-            "updated_at": face_emotion_states[request.device_id]["updated_at"],
-        },
+        "message": "Device updated",
+        "serial": serial,
+        "updated_fields": updated_fields,
     }
-
-
-@app.get("/face_emotion")
-async def get_face_emotion_state(device_id: Optional[str] = None):
-    """
-    Face Emotion 상태를 조회하는 엔드포인트
-
-    Query Parameters:
-    - device_id: 조회할 디바이스 ID (선택사항, 없으면 모든 디바이스 상태 반환)
-    """
-    if device_id:
-        # 특정 디바이스의 Face Emotion 상태 조회
-        if device_id not in face_emotion_states:
-            # Face Emotion 상태가 설정되지 않았으면 기본값("NEUTRAL") 반환
-            return {
-                "status": "success",
-                "face_emotion_state": {
-                    "device_id": device_id,
-                    "emotion": "NEUTRAL",  # 기본값
-                    "updated_at": datetime.now().isoformat(),
-                },
-            }
-
-        state = face_emotion_states[device_id]
-        return {
-            "status": "success",
-            "face_emotion_state": {
-                "device_id": device_id,
-                "emotion": state["emotion"],
-                "updated_at": state["updated_at"],
-            },
-        }
-    else:
-        # 모든 디바이스의 Face Emotion 상태 조회
-        return {
-            "status": "success",
-            "face_emotion_states": {
-                device_id: {
-                    "emotion": state["emotion"],
-                    "updated_at": state["updated_at"],
-                }
-                for device_id, state in face_emotion_states.items()
-            },
-        }
 
 
 if __name__ == "__main__":
