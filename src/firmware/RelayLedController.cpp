@@ -64,7 +64,8 @@ void RelayLedController::fetchAndApplyLedState() {
 
   HTTPClient http;
   String encodedDeviceId = urlEncode(deviceId);
-  String url = String(serverBaseUrl) + ledStateEndpoint + "?device_id=" + encodedDeviceId;
+  // 새 API: GET /devices/:serial/led
+  String url = String(serverBaseUrl) + ledStateEndpoint + "/" + encodedDeviceId + "/led";
 
   http.begin(url);
   int httpCode = http.GET();
@@ -84,7 +85,8 @@ void RelayLedController::fetchAndApplyLedState() {
 }
 
 int RelayLedController::parseLedStateFromJson(const String& json) const {
-  int ledOnIndex = json.indexOf("\"led_on\":");
+  // 새 API 응답 형식: {"is_led_on": true, "updated_at": "..."}
+  int ledOnIndex = json.indexOf("\"is_led_on\":");
   if (ledOnIndex == -1) {
     return -1;
   }

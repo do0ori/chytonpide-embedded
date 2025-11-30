@@ -59,41 +59,54 @@ void displayConfigMode() {
 void displayConnecting() {
   static unsigned long lastBlink = 0;
   static bool blinkState = false;
+  static bool screenInitialized = false;
+  static String cachedSSID = "";
   unsigned long currentMillis = millis();
   
-  // 500ms마다 깜빡임
-  if (currentMillis - lastBlink >= 500) {
-    lastBlink = currentMillis;
-    blinkState = !blinkState;
-    
+  // 화면 초기화 (한 번만)
+  if (!screenInitialized) {
     clearLCD();
     printLCD(10, 10, "WiFi Connecting", TFT_YELLOW, 3);
     printLCD(10, 40, "=======================", TFT_YELLOW, 2);
     
+    // SSID 캐싱 (한 번만 읽기)
+    cachedSSID = WiFi.SSID();
+    if (cachedSSID.length() == 0) {
+      Preferences prefs;
+      prefs.begin("wifi", true);
+      cachedSSID = prefs.getString("ssid", "");
+      prefs.end();
+    }
+    
+    screenInitialized = true;
+  }
+  
+  // 500ms마다 깜빡임 (텍스트만 업데이트)
+  if (currentMillis - lastBlink >= 500) {
+    lastBlink = currentMillis;
+    blinkState = !blinkState;
+    
+    // 기존 텍스트 영역만 지우기 (전체 화면 지우기 대신)
+    tft.fillRect(10, 80, 300, 60, TFT_BLACK);
+    
     if (blinkState) {
-      // 저장된 SSID 가져오기 시도
-      String ssid = WiFi.SSID();
-      if (ssid.length() == 0) {
-        // Preferences에서 직접 가져오기 시도
-        Preferences prefs;
-        prefs.begin("wifi", true);
-        ssid = prefs.getString("ssid", "");
-        prefs.end();
-      }
-      
-      if (ssid.length() > 0) {
-        // SSID가 있으면 표시
-        if (ssid.length() > 20) {
-          ssid = ssid.substring(0, 17) + "...";
+      if (cachedSSID.length() > 0) {
+        String displaySSID = cachedSSID;
+        if (displaySSID.length() > 20) {
+          displaySSID = displaySSID.substring(0, 17) + "...";
         }
         printLCD(10, 80, "Connecting to:", TFT_WHITE, 2);
-        printLCD(10, 105, ssid.c_str(), TFT_CYAN, 2);
+        printLCD(10, 105, displaySSID.c_str(), TFT_CYAN, 2);
       } else {
-        // SSID가 없으면 기본 메시지
         printLCD(10, 80, "Please wait...", TFT_WHITE, 2);
         printLCD(10, 105, "Connecting...", TFT_WHITE, 2);
       }
     }
+  }
+  
+  // 상태가 변경되면 초기화 플래그 리셋
+  if (lastDisplayedState != WIFI_CONNECTING) {
+    screenInitialized = false;
   }
 }
 
@@ -169,8 +182,8 @@ void initRoboEyes() {
     // RoboEyes 화면 크기 (landscape) - TFT-LCD.ino와 동일
     roboEyes.setScreenSize(320, 240);
     
-    // 50 FPS - TFT-LCD.ino와 동일
-    roboEyes.begin(50);
+    // 30 FPS로 낮춰서 성능 개선
+    roboEyes.begin(30);
     
     // 자동 깜빡임 + idle (마지막 두 파라미터: X축 범위, Y축 범위) - TFT-LCD.ino와 동일
     roboEyes.setAutoblinker(true, 2, 1);

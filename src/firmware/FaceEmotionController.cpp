@@ -43,7 +43,8 @@ void FaceEmotionController::fetchAndApplyEmotion() {
 
   HTTPClient http;
   String encodedDeviceId = urlEncode(deviceId);
-  String url = String(serverBaseUrl) + emotionEndpoint + "?device_id=" + encodedDeviceId;
+  // 새 API: GET /devices/:serial/lcd
+  String url = String(serverBaseUrl) + emotionEndpoint + "/" + encodedDeviceId + "/lcd";
 
   http.begin(url);
   int httpCode = http.GET();
@@ -67,8 +68,8 @@ void FaceEmotionController::fetchAndApplyEmotion() {
 }
 
 String FaceEmotionController::parseEmotionFromJson(const String& json) const {
-  // JSON에서 "emotion": "HAPPY" 형태를 찾음
-  int emotionIndex = json.indexOf("\"emotion\":");
+  // 새 API 응답 형식: {"face": "HAPPY", "updated_at": "..."}
+  int emotionIndex = json.indexOf("\"face\":");
   if (emotionIndex == -1) {
     return "";
   }

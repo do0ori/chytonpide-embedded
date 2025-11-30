@@ -13,7 +13,7 @@
 
 // 주기 설정 (밀리초)
 const uint32_t SENSOR_READ_INTERVAL_MS = 10000;      // 10초마다 센서 데이터 읽기
-const uint32_t SENSOR_UPLOAD_INTERVAL_MS = 60000;  // 1분마다 센서 데이터 업로드
+const uint32_t SENSOR_UPLOAD_INTERVAL_MS = 30000;  // 30초마다 센서 데이터 업로드
 const uint32_t LED_CHECK_INTERVAL_MS = 1000;        // 1초마다 LED 상태 확인
 const uint32_t FACE_EMOTION_CHECK_INTERVAL_MS = 2000;  // 2초마다 Face Emotion 상태 확인
 
@@ -27,11 +27,10 @@ WifiState lastDisplayedState = WIFI_ERROR;
 bool bootButtonPressed = false;
 
 // 서버 URL 및 엔드포인트
-// const char* SERVER_BASE_URL = "https://chytonpide.azurewebsites.net";
-const char* SERVER_BASE_URL = "https://afe9f8286d68.ngrok-free.app";
+const char* SERVER_BASE_URL = "https://chytonpide.azurewebsites.net";
 const char* SENSOR_ENDPOINT = "/sensor_data";
-const char* LED_STATE_ENDPOINT = "/led";
-const char* FACE_EMOTION_ENDPOINT = "/face_emotion";
+const char* LED_STATE_ENDPOINT = "/devices";  // /devices/:serial/led
+const char* FACE_EMOTION_ENDPOINT = "/devices";  // /devices/:serial/lcd
 
 // 프로토타입 고정 시리얼 ID
 const char* PROTOTYPE_SERIAL_ID = "xJN2wsF850yqWQfBUkGP";
