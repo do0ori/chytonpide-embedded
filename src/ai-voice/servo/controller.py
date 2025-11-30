@@ -73,12 +73,19 @@ class ServoController:
 
     def move_to_neutral(self, delay=0.5):
         """
-        서보 모터를 중립 위치로 이동
+        서보 모터를 중립 위치로 이동 (정확도 향상)
 
         Args:
             delay: 이동 후 대기 시간 (초)
         """
-        self.move_to_angle(self.neutral_angle, delay)
+        # gpiozero의 mid() 메서드를 사용하여 더 정확하게 중립 위치로 이동
+        self.servo.mid()
+        self.current_angle = self.neutral_angle
+        sleep(delay)
+        
+        # 한 번 더 확인하여 정확도 향상
+        self.servo.mid()
+        sleep(0.2)
 
     def sweep(self, start_angle, end_angle, step=1, delay=0.02):
         """
@@ -95,11 +102,22 @@ class ServoController:
             for angle in range(start_angle, end_angle + 1, step):
                 self.move_to_angle(angle, delay=0)
                 sleep(delay)
+            # 마지막에 정확히 end_angle에 도달하도록 보장
+            if (end_angle - start_angle) % step != 0 or start_angle % step != end_angle % step:
+                self.move_to_angle(end_angle, delay=0)
+                sleep(delay)
         else:
             # 뒤로 스위핑
             for angle in range(start_angle, end_angle - 1, -step):
                 self.move_to_angle(angle, delay=0)
                 sleep(delay)
+            # 마지막에 정확히 end_angle에 도달하도록 보장
+            if (start_angle - end_angle) % step != 0 or start_angle % step != end_angle % step:
+                self.move_to_angle(end_angle, delay=0)
+                sleep(delay)
+        
+        # end_angle로 명시적으로 이동하고 대기 시간을 줌
+        self.move_to_angle(end_angle, delay=delay * 2)
         self.current_angle = end_angle
 
     def shake_smooth(
@@ -123,7 +141,10 @@ class ServoController:
             self.sweep(max_angle, min_angle, step=step, delay=delay)
 
         if return_to_neutral:
-            self.move_to_neutral(delay=0.5)
+            # 중립 위치로 돌아가기 전에 잠시 대기 (서보가 안정화되도록)
+            sleep(0.15)
+            # 중립 위치로 정확히 이동 (더 긴 delay로 정확도 향상)
+            self.move_to_neutral(delay=1.0)
 
     def plant_shake(self, repeat=5, min_angle=45, max_angle=135, step=2, delay=0.02):
         """
@@ -148,6 +169,10 @@ class ServoController:
             delay=delay,
             return_to_neutral=True,
         )
+        
+        # 마지막에 한 번 더 중립 위치로 확실히 복귀 (정확도 향상)
+        sleep(0.1)
+        self.move_to_neutral(delay=0.8)
 
     def cleanup(self):
         """리소스 정리"""
