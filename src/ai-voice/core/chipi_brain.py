@@ -37,20 +37,34 @@ except ImportError:
     sys.exit(1)
 
 # 상대 경로로 import 시도 (servo 패키지처럼)
+# psycopg2가 없어도 계속 진행할 수 있도록 try-except로 처리
+DatabaseManager = None
 try:
     from database.db_manager import DatabaseManager
-except ImportError:
+except (ImportError, Exception):
     try:
-        from src.database.db_manager import DatabaseManager
-    except ImportError:
-        # 절대 경로로 시도
+        # 현재 디렉토리 기준으로 시도
         import sys
         import os
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        parent_dir = os.path.dirname(os.path.dirname(current_dir))
+        parent_dir = os.path.dirname(current_dir)
         if parent_dir not in sys.path:
             sys.path.insert(0, parent_dir)
         from database.db_manager import DatabaseManager
+    except (ImportError, Exception):
+        try:
+            # 상위 디렉토리 기준으로 시도
+            import sys
+            import os
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            parent_dir = os.path.dirname(os.path.dirname(current_dir))
+            if parent_dir not in sys.path:
+                sys.path.insert(0, parent_dir)
+            from database.db_manager import DatabaseManager
+        except (ImportError, OSError, Exception) as e:
+            print(f"⚠️  DatabaseManager를 import할 수 없습니다: {e}")
+            print("⚠️  데이터베이스 기능 없이 계속 진행합니다.")
+            DatabaseManager = None
 
 class ChipiBrain:
     def __init__(self):
@@ -120,11 +134,28 @@ class ChipiBrain:
         # ==========================================
         # 3. 데이터베이스 초기화
         # ==========================================
+        print("   데이터베이스 연결 시도 중...", end=" ", flush=True)
         try:
-            self.db_manager = DatabaseManager()
-            self.db_manager.connect()
-        except Exception as e:
-            print(f"⚠️  데이터베이스 연결 실패: {e}")
+            # DatabaseManager가 없거나 import 실패한 경우 None으로 설정
+            if DatabaseManager is None:
+                print("건너뜀 (DatabaseManager 없음)", flush=True)
+                self.db_manager = None
+            else:
+                self.db_manager = DatabaseManager()
+                # connect_timeout 파라미터로 타임아웃 설정 (5초)
+                self.db_manager.connect(timeout=5)
+                print("✅ 완료", flush=True)
+        except (ImportError, TimeoutError, Exception) as e:
+            # 오류 메시지는 간단하게만 표시
+            error_str = str(e)
+            if "Connection timed out" in error_str or "could not connect" in error_str:
+                print("❌ 실패 (연결 타임아웃)", flush=True)
+            elif "psycopg2" in error_str.lower() or "libpq" in error_str.lower():
+                print("❌ 실패 (psycopg2 오류)", flush=True)
+            else:
+                # 오류 메시지가 너무 길면 잘라서 표시
+                short_msg = error_str[:60] + "..." if len(error_str) > 60 else error_str
+                print(f"❌ 실패 ({short_msg})", flush=True)
             self.db_manager = None
 
         # ==========================================
@@ -215,18 +246,20 @@ class ChipiBrain:
         # 온도 질문 감지 ("온도 어때?", "지금 온도?" 등)
         has_temp_keyword = any(k in last_user_msg for k in ["온도", "따뜻", "더워", "추워"])
         if has_temp_keyword and "습도" not in last_user_msg:
-            sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
-            if sensor_data and sensor_data.get('temperature') is not None:
-                temp = sensor_data.get('temperature')
-                special_context += f"## 특별 상황: user가 온도를 묻고 있어!\n현재 온도는 {temp}도야. 이 정보를 바탕으로 다양하게 응답해.\n"
+            if device_serial and self.db_manager:
+                sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
+                if sensor_data and sensor_data.get('temperature') is not None:
+                    temp = sensor_data.get('temperature')
+                    special_context += f"## 특별 상황: user가 온도를 묻고 있어!\n현재 온도는 {temp}도야. 이 정보를 바탕으로 다양하게 응답해.\n"
 
         # 습도 질문 감지 ("습도 어때?", "지금 습도?" 등)
         has_humidity_keyword = any(k in last_user_msg for k in ["습도", "건조", "말라"])
         if has_humidity_keyword and "온도" not in last_user_msg:
-            sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
-            if sensor_data and sensor_data.get('humidity') is not None:
-                humidity = sensor_data.get('humidity')
-                special_context += f"## 특별 상황: user가 습도를 묻고 있어!\n현재 습도는 {humidity}%야. 이 정보를 바탕으로 다양하게 응답해.\n"
+            if device_serial and self.db_manager:
+                sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
+                if sensor_data and sensor_data.get('humidity') is not None:
+                    humidity = sensor_data.get('humidity')
+                    special_context += f"## 특별 상황: user가 습도를 묻고 있어!\n현재 습도는 {humidity}%야. 이 정보를 바탕으로 다양하게 응답해.\n"
 
         # 1. 선택된 AI의 시스템 프롬프트 가져오기
         system_prompt = self.system_prompts.get(

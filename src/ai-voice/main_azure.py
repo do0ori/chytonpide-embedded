@@ -105,7 +105,7 @@ AZURE_OPENAI_API_VERSION = os.environ.get(
 
 # Azure Speech 설정
 AZURE_SPEECH_API_KEY = os.environ.get("AZURE_SPEECH_API_KEY")
-AZURE_REGION = os.environ.get("AZURE_REGION")
+AZURE_SPEECH_REGION = os.environ.get("AZURE_SPEECH_REGION")
 AZURE_SPEECH_ENDPOINT = os.environ.get("AZURE_SPEECH_ENDPOINT")
 
 # 트리거 단어 설정
@@ -118,8 +118,10 @@ if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
     )
     sys.exit(1)
 
-if not AZURE_SPEECH_API_KEY or not AZURE_REGION:
-    logger.error("AZURE_SPEECH_API_KEY와 AZURE_REGION이 .env 파일에 설정되어야 합니다.")
+if not AZURE_SPEECH_API_KEY or not AZURE_SPEECH_REGION:
+    logger.error(
+        "AZURE_SPEECH_API_KEY와 AZURE_SPEECH_REGION이 .env 파일에 설정되어야 합니다."
+    )
     sys.exit(1)
 
 # Azure Speech REST API 엔드포인트 설정
@@ -130,20 +132,28 @@ if AZURE_SPEECH_ENDPOINT:
     AZURE_SPEECH_ENDPOINT = AZURE_SPEECH_ENDPOINT.rstrip("/")
 
     # 구버전 형식을 새 형식으로 변환
-    if ".api.cognitive.microsoft.com" in AZURE_SPEECH_ENDPOINT:
-        # api.cognitive.microsoft.com → stt.speech.microsoft.com
+    # .api.cognitive.microsoft.com 또는 .cognitiveservices.azure.com 형식 감지
+    if (
+        ".api.cognitive.microsoft.com" in AZURE_SPEECH_ENDPOINT
+        or ".cognitiveservices.azure.com" in AZURE_SPEECH_ENDPOINT
+    ):
+        # 구버전 엔드포인트 → 새 형식 (https://{region}.stt.speech.microsoft.com)
         logger.info("구버전 엔드포인트 감지, 새 형식으로 변환합니다.")
         logger.info(f"원본: {AZURE_SPEECH_ENDPOINT}")
         # Region 기반으로 새 엔드포인트 생성
-        AZURE_SPEECH_ENDPOINT = f"https://{AZURE_REGION}.stt.speech.microsoft.com"
+        AZURE_SPEECH_ENDPOINT = (
+            f"https://{AZURE_SPEECH_REGION}.stt.speech.microsoft.com"
+        )
         logger.info(f"변환됨: {AZURE_SPEECH_ENDPOINT}")
 else:
     # 기본 STT 엔드포인트 형식 (권장)
-    AZURE_SPEECH_ENDPOINT = f"https://{AZURE_REGION}.stt.speech.microsoft.com"
+    AZURE_SPEECH_ENDPOINT = f"https://{AZURE_SPEECH_REGION}.stt.speech.microsoft.com"
 
 # TTS 엔드포인트는 별도로 설정
-if AZURE_REGION:
-    AZURE_SPEECH_TTS_ENDPOINT = f"https://{AZURE_REGION}.tts.speech.microsoft.com"
+if AZURE_SPEECH_REGION:
+    AZURE_SPEECH_TTS_ENDPOINT = (
+        f"https://{AZURE_SPEECH_REGION}.tts.speech.microsoft.com"
+    )
 else:
     # Region이 없으면 STT 엔드포인트와 유사한 형식 사용
     AZURE_SPEECH_TTS_ENDPOINT = (
@@ -324,7 +334,7 @@ class AzureSpeechRESTSTT:
             elif response.status_code == 404:
                 logger.error("STT API 엔드포인트 오류 (404): URL을 확인하세요.")
                 logger.error(f"사용된 URL: {self.stt_url}")
-                logger.error(f"Region: {AZURE_REGION}")
+                logger.error(f"Region: {AZURE_SPEECH_REGION}")
                 logger.error(f"응답: {response.text}")
                 return None
             else:
@@ -693,7 +703,7 @@ class VoiceAssistant:
             logger.info("Sleep mode로 전환합니다.")
             self.sleep_mode = True
             self.last_interaction_time = None
-            self.tts.synthesize("좋은 하루 되세요!")
+            # TTS 없이 로그만 남김
             return "sleep"
 
         # AI 응답 생성
@@ -706,10 +716,17 @@ class VoiceAssistant:
             logger.debug("이전과 동일한 응답입니다. TTS를 건너뜁니다.")
             return
 
-        # TTS로 음성 출력
+        # TTS로 음성 출력 (재생 시작 시 시간 업데이트)
+        # TTS 재생 중에도 타임아웃이 발생하지 않도록 재생 시작 시점에 시간 업데이트
+        if not self.sleep_mode:
+            self.last_interaction_time = time.time()
+
         success = self.tts.synthesize(response_text)
         if success:
             self.last_response = response_text
+            # TTS 재생 완료 후에도 시간 업데이트 (다음 타임아웃 시작점)
+            if not self.sleep_mode:
+                self.last_interaction_time = time.time()
 
         return response_text
 
@@ -739,7 +756,8 @@ class VoiceAssistant:
         try:
             while self.running:
                 try:
-                    # Sleep mode: 타임아웃 체크
+                    # Sleep mode: 타임아웃 체크 (VAD 대기 중에만 체크)
+                    # TTS 재생 중에는 타임아웃이 발생하지 않도록 VAD 대기 상태에서만 체크
                     if not self.sleep_mode and self.last_interaction_time:
                         time_since_last = time.time() - self.last_interaction_time
                         if time_since_last >= self.sleep_timeout:
@@ -748,7 +766,7 @@ class VoiceAssistant:
                             )
                             self.sleep_mode = True
                             self.last_interaction_time = None
-                            self.tts.synthesize("Sleep mode로 전환합니다.")
+                            # TTS 없이 로그만 남김
 
                     # 모드 표시
                     mode_str = "WAKE" if not self.sleep_mode else "SLEEP"
