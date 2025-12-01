@@ -374,6 +374,8 @@ class DatabaseManager:
         """
         try:
             user_name = None
+            user = None
+            user_id = None
 
             # 1. 환경 변수에서 USER_EMAIL 가져오기
             user_email = os.environ.get("USER_EMAIL")
@@ -395,6 +397,13 @@ class DatabaseManager:
             # 4. 못 찾으면 None 설정 (시스템 프롬프트에서 기본값 '주인님' 사용)
             if not user_name:
                 print("⚠️  사용자 정보를 찾을 수 없습니다. 기본값 'user' 사용")
+
+            # 사용자 정보가 있으면 user_id 가져오기 (추가 컨텍스트용)
+            if user:
+                user_id = user.get("id")
+
+            # 디바이스 정보 조회 (추가 컨텍스트)
+            device_info = self.get_device_info(device_serial)
 
             # 최신 센서 데이터 직접 조회 (시리얼 기반)
             sensor_data = self.get_sensor_data_by_serial(device_serial)
@@ -442,6 +451,83 @@ class DatabaseManager:
 
             else:
                 context += "- 현재 센서 데이터를 불러올 수 없습니다.\n"
+
+            # 디바이스 정보 추가 (있는 경우)
+            device_id = None
+            if device_info:
+                context += "\n## 디바이스 정보\n"
+                device_name = device_info.get("name")
+                device_status = device_info.get("status")
+                device_id = device_info.get("id")
+                if device_name:
+                    context += f"- 디바이스명: {device_name}\n"
+                if device_status:
+                    context += f"- 상태: {device_status}\n"
+
+            # 최근 센서 데이터 추세 분석 (있는 경우, 최근 3개)
+            if device_id:
+                recent_sensor_data = self.get_latest_sensor_data(device_id, limit=3)
+                if recent_sensor_data and len(recent_sensor_data) > 1:
+                    context += "\n## 최근 센서 데이터 추세 (참고용)\n"
+                    temps = [
+                        float(d.get("temperature", 0))
+                        for d in recent_sensor_data
+                        if d.get("temperature") is not None
+                    ]
+                    humids = [
+                        float(d.get("humidity", 0))
+                        for d in recent_sensor_data
+                        if d.get("humidity") is not None
+                    ]
+                    if temps:
+                        avg_temp = sum(temps) / len(temps)
+                        context += f"- 최근 평균 온도: {avg_temp:.1f}도\n"
+                        if len(temps) > 1:
+                            temp_change = temps[0] - temps[-1]
+                            trend = (
+                                "상승"
+                                if temp_change > 0
+                                else "하락" if temp_change < 0 else "유지"
+                            )
+                            context += f"- 온도 추세: {trend}\n"
+                    if humids:
+                        avg_humid = sum(humids) / len(humids)
+                        context += f"- 최근 평균 습도: {avg_humid:.1f}%\n"
+                        if len(humids) > 1:
+                            humid_change = humids[0] - humids[-1]
+                            trend = (
+                                "상승"
+                                if humid_change > 0
+                                else "하락" if humid_change < 0 else "유지"
+                            )
+                            context += f"- 습도 추세: {trend}\n"
+
+            # 사용자 키트 정보 추가 (있는 경우)
+            if user_id:
+                kits = self.get_user_kits(user_id)
+                if kits:
+                    context += "\n## 사용자 키트 정보\n"
+                    context += f"- 보유 키트 수: {len(kits)}개\n"
+                    # 첫 번째 키트 정보만 간단히 추가
+                    first_kit = kits[0]
+                    kit_name = first_kit.get("name") or first_kit.get("plant_name")
+                    if kit_name:
+                        context += f"- 키트명: {kit_name}\n"
+
+            # 최근 사용 로그 추가 (있는 경우, 최근 3개만)
+            if user_id:
+                recent_logs = self.get_recent_logs(user_id, limit=3)
+                if recent_logs:
+                    context += "\n## 최근 활동 (참고용)\n"
+                    for log in recent_logs[:3]:  # 최근 3개만
+                        log_type = log.get("type") or log.get("action")
+                        log_time = log.get("created_at")
+                        if log_time and hasattr(log_time, "strftime"):
+                            log_time = log_time.strftime("%Y-%m-%d %H:%M:%S")
+                        if log_type:
+                            context += (
+                                f"- {log_type} ({log_time if log_time else '최근'})\n"
+                            )
 
             return context, user_name
 

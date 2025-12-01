@@ -468,7 +468,7 @@ def _find_servo_script_path():
 
 
 def _run_servo_plant_shake():
-    """서보 모터로 화분 흔들기 실행 (subprocess 사용)"""
+    """서보 모터로 화분 흔들기 실행 (subprocess 사용, 비블로킹)"""
     script_path = _find_servo_script_path()
     if not script_path:
         logger.error("서보 스크립트를 찾을 수 없습니다.")
@@ -476,29 +476,40 @@ def _run_servo_plant_shake():
 
     try:
         logger.info(f"서보 모터 실행: {script_path}")
-        # sudo 권한으로 실행
-        result = subprocess.run(
+        # sudo 권한으로 비블로킹 실행 (Popen 사용)
+        process = subprocess.Popen(
             ["sudo", "python3", script_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=30,  # 최대 30초 대기
             text=True,
         )
+        # 프로세스가 시작되면 즉시 반환 (비블로킹)
+        logger.debug(f"서보 모터 프로세스 시작됨 (PID: {process.pid})")
 
-        if result.returncode == 0:
-            logger.info("서보 모터 실행 완료")
-            if result.stdout:
-                logger.debug(f"서보 출력: {result.stdout}")
-            return True
-        else:
-            logger.error(f"서보 모터 실행 실패 (코드: {result.returncode})")
-            if result.stderr:
-                logger.error(f"서보 오류: {result.stderr}")
-            return False
+        # 백그라운드에서 완료 대기
+        def _wait_for_completion():
+            try:
+                stdout, stderr = process.communicate(timeout=30)
+                if process.returncode == 0:
+                    logger.info("서보 모터 실행 완료")
+                    if stdout:
+                        logger.debug(f"서보 출력: {stdout}")
+                else:
+                    logger.error(f"서보 모터 실행 실패 (코드: {process.returncode})")
+                    if stderr:
+                        logger.error(f"서보 오류: {stderr}")
+            except subprocess.TimeoutExpired:
+                logger.error("서보 모터 실행 시간 초과 (30초)")
+                process.kill()
+                process.wait()
+            except Exception as e:
+                logger.error(f"서보 모터 실행 오류: {e}", exc_info=True)
 
-    except subprocess.TimeoutExpired:
-        logger.error("서보 모터 실행 시간 초과 (30초)")
-        return False
+        # 완료 대기를 별도 스레드에서 실행
+        threading.Thread(target=_wait_for_completion, daemon=True).start()
+
+        return True
+
     except Exception as e:
         logger.error(f"서보 모터 실행 오류: {e}", exc_info=True)
         return False
@@ -521,20 +532,49 @@ def _run_servo_async():
 
 # 오디오 유틸리티 import
 try:
-    from utils.audio_utils import play_intro_audio
+    from utils.audio_utils import (
+        find_mapped_audio,
+        load_audio_mapping,
+        play_audio_file,
+        play_audio_file_async,
+        play_audio_file_by_path,
+        play_intro_audio,
+    )
 except ImportError:
     # 상위 디렉토리에서 시도
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         if current_dir not in sys.path:
             sys.path.insert(0, current_dir)
-        from utils.audio_utils import play_intro_audio
+        from utils.audio_utils import (
+            find_mapped_audio,
+            load_audio_mapping,
+            play_audio_file,
+            play_audio_file_async,
+            play_audio_file_by_path,
+            play_intro_audio,
+        )
     except ImportError:
         logger.error("utils.audio_utils를 import할 수 없습니다.")
 
         # 폴백 함수 정의
         def play_intro_audio(*args, **kwargs):
             logger.error("play_intro_audio 함수를 사용할 수 없습니다.")
+            return False
+
+        def load_audio_mapping():
+            return {}
+
+        def find_mapped_audio(user_text, audio_mapping):
+            return None, None
+
+        def play_audio_file(filename):
+            return False
+
+        def play_audio_file_async(filename):
+            return None
+
+        def play_audio_file_by_path(file_path):
             return False
 
 
@@ -744,6 +784,14 @@ def main():
             tts = SupertonTTS()
             print("✅ 완료\n")
 
+            # 오디오 매핑 로드
+            print("📁 오디오 매핑 로드 중...", end=" ", flush=True)
+            audio_mapping = load_audio_mapping()
+            if audio_mapping:
+                print(f"✅ 완료 ({len(audio_mapping)}개 항목)")
+            else:
+                print("⚠️ 매핑 없음")
+
             # Sleep/Wake 모드 관리
             # 트리거 단어를 사용하지 않으면 바로 Wake mode로 시작
             sleep_mode = USE_TRIGGER_WORD  # 트리거 단어 사용 시만 Sleep mode로 시작
@@ -862,11 +910,109 @@ def main():
                             flush=True,
                         )
 
+                    # 오디오 매핑 확인 (LLM 우회)
+                    mapped_audio_path, mapped_response_text = find_mapped_audio(
+                        user_text, audio_mapping
+                    )
+
+                    if mapped_audio_path:
+                        # 매핑된 오디오 파일이 있으면 LLM을 거치지 않고 바로 재생
+                        logger.info(f"매핑된 오디오 파일 발견: {mapped_audio_path}")
+                        print(
+                            f"🎵 매핑된 오디오 재생: {os.path.basename(mapped_audio_path)}",
+                            flush=True,
+                        )
+
+                        # 응답 텍스트 설정
+                        ai_response = mapped_response_text
+                        print(f"🤖 치피: {ai_response}", flush=True)
+
+                        # 얼굴 표정 감지 및 설정 (응답 텍스트 기반)
+                        detected_emotion = _detect_face_emotion_from_response(
+                            ai_response
+                        )
+                        print(f"😊 감지된 표정: {detected_emotion}", flush=True)
+                        if DEVICE_SERIAL:
+                            threading.Thread(
+                                target=lambda: _set_face_emotion(detected_emotion),
+                                daemon=True,
+                            ).start()
+
+                        # TTS 재생 시작 시 시간 업데이트
+                        if not sleep_mode:
+                            last_interaction_time = time.time()
+
+                        # 서보 모터와 오디오 파일을 정확히 동시에 시작
+                        # 서보 모터 스크립트 경로를 미리 찾기 (블로킹 방지)
+                        servo_script_path = _find_servo_script_path()
+
+                        # 서보 모터를 먼저 시작하는 함수 (바로 실행)
+                        def _start_servo():
+                            if servo_script_path:
+                                try:
+                                    process = subprocess.Popen(
+                                        ["sudo", "python3", servo_script_path],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE,
+                                        text=True,
+                                    )
+                                    logger.debug(
+                                        f"서보 모터 프로세스 시작됨 (PID: {process.pid})"
+                                    )
+
+                                    # 완료 대기는 백그라운드에서
+                                    def _wait_servo():
+                                        try:
+                                            process.communicate(timeout=30)
+                                            if process.returncode == 0:
+                                                logger.info("서보 모터 실행 완료")
+                                        except subprocess.TimeoutExpired:
+                                            process.kill()
+                                            logger.error("서보 모터 실행 시간 초과")
+                                        except Exception as e:
+                                            logger.error(f"서보 모터 오류: {e}")
+
+                                    threading.Thread(
+                                        target=_wait_servo, daemon=True
+                                    ).start()
+                                except Exception as e:
+                                    logger.error(f"서보 모터 실행 오류: {e}")
+                            else:
+                                logger.error("서보 스크립트를 찾을 수 없습니다.")
+
+                        # 오디오 재생 함수 (1초 지연)
+                        def _start_audio():
+                            time.sleep(1.0)  # 서보 모터 시작 시간 확보를 위해 1초 대기
+                            play_audio_file_by_path(mapped_audio_path)
+
+                        # 서보 모터를 먼저 시작 (별도 스레드)
+                        servo_thread = threading.Thread(
+                            target=_start_servo, daemon=True
+                        )
+                        servo_thread.start()
+
+                        # 오디오 재생 시작 (1초 지연 후 재생)
+                        audio_thread = threading.Thread(
+                            target=_start_audio, daemon=True
+                        )
+                        audio_thread.start()
+
+                        logger.info(
+                            f"서보 모터와 오디오 파일을 동시에 시작: {mapped_audio_path}"
+                        )
+
+                        # TTS 재생 완료 후 시간 업데이트
+                        if not sleep_mode:
+                            last_response = ai_response
+                            last_interaction_time = time.time()
+
+                        continue  # LLM 호출 없이 다음 루프로 (LED 제어는 이미 위에서 실행됨)
+
                     # 슬픈 톤 키워드 감지
                     is_sad_topic = any(keyword in user_text for keyword in sad_keywords)
                     print(f"🔍 슬픈 토픽 감지: {is_sad_topic}", flush=True)
 
-                    # AI 응답 생성
+                    # AI 응답 생성 (LLM 호출)
                     print("🧠 생각하는 중...", end=" ", flush=True)
                     brain.add_msg(user_text)
                     ai_response = brain.wait_run(
