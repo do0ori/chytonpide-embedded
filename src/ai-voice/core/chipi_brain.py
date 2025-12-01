@@ -1,17 +1,21 @@
-import sys
 import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+import sys
+
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from dotenv import load_dotenv
 
 # openai 버전에 따라 다른 import (Python 3.7.3 호환)
 try:
     import openai
-    
+
     # openai 버전 확인
     try:
         openai_version = openai.__version__
@@ -20,13 +24,14 @@ try:
             openai_version = "0.28.x"
         else:
             openai_version = "0.0.0"
-    
+
     HAS_AZURE_OPENAI_CLASS = False
     AzureOpenAI = None
-    
+
     if openai_version.startswith("1."):
         try:
             from openai import AzureOpenAI
+
             HAS_AZURE_OPENAI_CLASS = True
         except (ImportError, AttributeError):
             HAS_AZURE_OPENAI_CLASS = False
@@ -44,8 +49,9 @@ try:
 except (ImportError, Exception):
     try:
         # 현재 디렉토리 기준으로 시도
-        import sys
         import os
+        import sys
+
         current_dir = os.path.dirname(os.path.abspath(__file__))
         parent_dir = os.path.dirname(current_dir)
         if parent_dir not in sys.path:
@@ -54,8 +60,9 @@ except (ImportError, Exception):
     except (ImportError, Exception):
         try:
             # 상위 디렉토리 기준으로 시도
-            import sys
             import os
+            import sys
+
             current_dir = os.path.dirname(os.path.abspath(__file__))
             parent_dir = os.path.dirname(os.path.dirname(current_dir))
             if parent_dir not in sys.path:
@@ -66,16 +73,19 @@ except (ImportError, Exception):
             print("⚠️  데이터베이스 기능 없이 계속 진행합니다.")
             DatabaseManager = None
 
+
 class ChipiBrain:
     def __init__(self):
         # Python 3.7.3 호환: encoding 파라미터는 Python 3.9+에서만 지원
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        config_path = os.path.join(os.path.dirname(os.path.dirname(current_dir)), 'config', '.env')
+        config_path = os.path.join(
+            os.path.dirname(os.path.dirname(current_dir)), "config", ".env"
+        )
         try:
             if os.path.exists(config_path):
-                load_dotenv(config_path, encoding='utf-8')
+                load_dotenv(config_path, encoding="utf-8")
             else:
-                load_dotenv(encoding='utf-8')
+                load_dotenv(encoding="utf-8")
         except TypeError:
             # encoding 파라미터가 지원되지 않는 경우 (Python 3.7)
             if os.path.exists(config_path):
@@ -108,6 +118,7 @@ class ChipiBrain:
                 # 암호 없는 인증 (Managed Identity 등)
                 try:
                     from azure.identity import DefaultAzureCredential
+
                     credential = DefaultAzureCredential()
                     self.client = AzureOpenAI(
                         api_version=api_version,
@@ -197,7 +208,7 @@ class ChipiBrain:
                     # 시스템 메시지는 저장하지 않음 (매번 설정에 따라 달라질 수 있으므로)
                     if msg.get("role") != "system":
                         # 줄바꿈 문자가 있을 경우 파일 형식이 깨질 수 있으므로 replace 처리 등을 고려할 수 있음
-                        clean_content = msg['content'].replace("\n", " ") 
+                        clean_content = msg["content"].replace("\n", " ")
                         f.write(f"{msg['role']}:{clean_content}\n")
         except Exception as e:
             print(f"히스토리 저장 오류: {e}")
@@ -237,28 +248,73 @@ class ChipiBrain:
 
         if device_serial and self.db_manager:
             user_info = self.db_manager.get_user_by_device_serial(device_serial)
-            user_name = user_info.get('name') if user_info else None
+            user_name = user_info.get("name") if user_info else None
 
         # 물 주기 표현 감지
-        if any(k in last_user_msg for k in ["물 줄게", "물 줘", "물을 줄게", "물을 줘"]):
+        if any(
+            k in last_user_msg for k in ["물 줄게", "물 줘", "물을 줄게", "물을 줘"]
+        ):
             special_context += "## 특별 상황: user가 물을 주려고 해!\n감사를 표현하고 user의 건강을 먼저 생각해줘. 다양하게 응답해.\n"
 
-        # 온도 질문 감지 ("온도 어때?", "지금 온도?" 등)
-        has_temp_keyword = any(k in last_user_msg for k in ["온도", "따뜻", "더워", "추워"])
-        if has_temp_keyword and "습도" not in last_user_msg:
+        # 온습도 관련 키워드 감지
+        has_temp_keyword = any(
+            k in last_user_msg for k in ["온도", "따뜻", "더워", "추워"]
+        )
+        has_humidity_keyword = any(k in last_user_msg for k in ["습도", "건조", "말라"])
+        has_temp_humidity_keyword = any(
+            k in last_user_msg
+            for k in ["온습도", "온도 습도", "온도와 습도", "온도 습도 알려줘"]
+        )
+        # 상태 질문 감지 (더 구체적인 패턴으로)
+        has_status_keyword = any(
+            k in last_user_msg
+            for k in [
+                "상태 어때",
+                "상태 어떠냐",
+                "지금 상태",
+                "네 상태",
+                "너 상태",
+                "상태 어떠",
+                "상태 어떤가",
+                "상태가 어때",
+            ]
+        )
+
+        # 온습도 둘 다 묻는 경우 (온습도, 상태 어때 등)
+        # 상태 질문은 무조건 온습도 정보를 제공
+        ask_for_both = (
+            has_temp_humidity_keyword
+            or has_status_keyword
+            or (has_temp_keyword and has_humidity_keyword)
+        )
+
+        # 온습도 둘 다 묻는 경우 (온습도, 상태 어때 등)
+        if ask_for_both and device_serial and self.db_manager:
+            sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
+            if sensor_data:
+                temp = sensor_data.get("temperature")
+                humidity = sensor_data.get("humidity")
+                temp_str = f"{temp}도" if temp is not None else "알 수 없음"
+                humidity_str = f"{humidity}%" if humidity is not None else "알 수 없음"
+                if has_status_keyword:
+                    special_context += f"## 특별 상황: user가 상태를 묻고 있어!\n현재 온도는 {temp_str}, 습도는 {humidity_str}야. 이 정보를 바탕으로 상태를 친근하게 알려줘.\n"
+                else:
+                    special_context += f"## 특별 상황: user가 온습도를 묻고 있어!\n현재 온도는 {temp_str}, 습도는 {humidity_str}야. 이 정보를 바탕으로 다양하고 친근하게 응답해.\n"
+
+        # 온도만 묻는 경우 (상태 질문이 아닐 때만)
+        elif has_temp_keyword and not has_humidity_keyword and not has_status_keyword:
             if device_serial and self.db_manager:
                 sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
-                if sensor_data and sensor_data.get('temperature') is not None:
-                    temp = sensor_data.get('temperature')
+                if sensor_data and sensor_data.get("temperature") is not None:
+                    temp = sensor_data.get("temperature")
                     special_context += f"## 특별 상황: user가 온도를 묻고 있어!\n현재 온도는 {temp}도야. 이 정보를 바탕으로 다양하게 응답해.\n"
 
-        # 습도 질문 감지 ("습도 어때?", "지금 습도?" 등)
-        has_humidity_keyword = any(k in last_user_msg for k in ["습도", "건조", "말라"])
-        if has_humidity_keyword and "온도" not in last_user_msg:
+        # 습도만 묻는 경우 (상태 질문이 아닐 때만)
+        elif has_humidity_keyword and not has_temp_keyword and not has_status_keyword:
             if device_serial and self.db_manager:
                 sensor_data = self.db_manager.get_sensor_data_by_serial(device_serial)
-                if sensor_data and sensor_data.get('humidity') is not None:
-                    humidity = sensor_data.get('humidity')
+                if sensor_data and sensor_data.get("humidity") is not None:
+                    humidity = sensor_data.get("humidity")
                     special_context += f"## 특별 상황: user가 습도를 묻고 있어!\n현재 습도는 {humidity}%야. 이 정보를 바탕으로 다양하게 응답해.\n"
 
         # 1. 선택된 AI의 시스템 프롬프트 가져오기
@@ -269,13 +325,26 @@ class ChipiBrain:
         # 2. DB 컨텍스트 추가 (device_serial이 있을 경우)
         db_context = ""
         if device_serial and self.db_manager:
-            # 온도 또는 습도만 묻는지 확인
-            has_temp_keyword = any(k in last_user_msg for k in ["온도", "따뜻", "더워", "추워"])
-            has_humidity_keyword = any(k in last_user_msg for k in ["습도", "건조", "말라"])
+            # 온도 또는 습도만 묻는지 확인 (이미 위에서 정의했으므로 재사용)
+            # 온습도 둘 다 묻는 경우는 only_temperature와 only_humidity 둘 다 False
+            ask_temp_only = (
+                has_temp_keyword
+                and not has_humidity_keyword
+                and not has_temp_humidity_keyword
+                and not has_status_keyword
+            )
+            ask_humidity_only = (
+                has_humidity_keyword
+                and not has_temp_keyword
+                and not has_temp_humidity_keyword
+                and not has_status_keyword
+            )
 
-            db_context, user_name = self.db_manager.build_context(device_serial,
-                                                                    only_temperature=has_temp_keyword and not has_humidity_keyword,
-                                                                    only_humidity=has_humidity_keyword and not has_temp_keyword)
+            db_context, user_name = self.db_manager.build_context(
+                device_serial,
+                only_temperature=ask_temp_only,
+                only_humidity=ask_humidity_only,
+            )
 
         # 최종 시스템 프롬프트 (DB 정보 포함)
         final_system_prompt = system_prompt
@@ -285,22 +354,22 @@ class ChipiBrain:
             final_system_prompt = final_system_prompt.replace("user", user_name)
             print(f"📝 사용자 호칭: {user_name}")
         else:
-            print(f"📝 사용자 호칭: user (기본값)")
+            print("📝 사용자 호칭: user (기본값)")
 
         if db_context:
             final_system_prompt += f"\n\n## 사용자 컨텍스트\n{db_context}"
             print(f"📝 DB 컨텍스트 추가됨 (길이: {len(db_context)}자)")
         else:
-            print(f"⚠️  DB 컨텍스트 없음")
+            print("⚠️  DB 컨텍스트 없음")
 
         # special_context 추가 (특별 상황 처리)
         if special_context:
             final_system_prompt += f"\n\n{special_context}"
-            print(f"📝 특별 상황 감지됨")
+            print("📝 특별 상황 감지됨")
         else:
             # special_context가 없으면 일반 대화 모드 강조
             final_system_prompt += "\n\n## 일반 대화 모드\nuser와 자연스럽게 대화해. 친근하게 질문하고 관심 보여줘."
-            print(f"📝 일반 대화 모드")
+            print("📝 일반 대화 모드")
 
         # 3. 시스템 메시지 처리
         # 현재 메시지 목록에 시스템 메시지가 없거나, 다른 페르소나의 메시지일 수 있으므로
@@ -312,24 +381,29 @@ class ChipiBrain:
 
         try:
             print(f"📤 API 요청 중... (메시지 개수: {len(self.messages)})")
-            
+
             if HAS_AZURE_OPENAI_CLASS:
                 # openai 1.x 버전
                 response = self.client.chat.completions.create(
                     model=self.deployment_name,
                     messages=self.messages,
                     max_tokens=100,
-                    temperature=0.7, # 치피의 감성적인 대화를 위해 약간 높임
+                    temperature=0.7,  # 치피의 감성적인 대화를 위해 약간 높임
                     top_p=1.0,
                 )
 
-                print(f"📥 API 응답 받음:")
+                print("📥 API 응답 받음:")
                 print(f"   - choices 개수: {len(response.choices)}")
                 print(f"   - finish_reason: {response.choices[0].finish_reason}")
 
                 # 콘텐츠 필터 체크
-                if hasattr(response.choices[0], 'content_filter_results') and response.choices[0].content_filter_results:
-                    print(f"   - content_filter_results: {response.choices[0].content_filter_results}")
+                if (
+                    hasattr(response.choices[0], "content_filter_results")
+                    and response.choices[0].content_filter_results
+                ):
+                    print(
+                        f"   - content_filter_results: {response.choices[0].content_filter_results}"
+                    )
 
                 assistant_message = response.choices[0].message.content
             else:
@@ -342,18 +416,18 @@ class ChipiBrain:
                     top_p=1.0,
                 )
 
-                print(f"📥 API 응답 받음:")
+                print("📥 API 응답 받음:")
                 print(f"   - choices 개수: {len(response['choices'])}")
                 print(f"   - finish_reason: {response['choices'][0]['finish_reason']}")
 
                 assistant_message = response["choices"][0]["message"]["content"]
-            
+
             print(f"✓ 응답 메시지: {assistant_message}")
 
             # 응답이 None인 경우 처리
             if assistant_message is None:
                 print("⚠️  응답이 None입니다! (content 값이 비어있음)")
-                if response.choices[0].finish_reason == 'content_filter':
+                if response.choices[0].finish_reason == "content_filter":
                     print("   → 원인: Azure 콘텐츠 필터 (안전 정책 위반)")
                 print(f"   전체 message 객체: {response.choices[0].message}")
                 assistant_message = "어, 지금은 잘 모르겠어. 잠시만 기다려줄래?"
@@ -370,6 +444,7 @@ class ChipiBrain:
             print(f"❌ 최종 시스템 프롬프트:\n{final_system_prompt}\n")
             print(f"❌ 메시지 목록:\n{self.messages}\n")
             import traceback
+
             traceback.print_exc()
             return error_msg
 
@@ -481,7 +556,7 @@ class ChipiBrain:
 
     def __del__(self):
         """소멸자: 데이터베이스 연결 종료"""
-        if hasattr(self, 'db_manager') and self.db_manager:
+        if hasattr(self, "db_manager") and self.db_manager:
             try:
                 self.db_manager.close()
             except:
@@ -493,11 +568,13 @@ class ChipiBrain:
 # ==========================================
 if __name__ == "__main__":
     manager = ChipiBrain()
-    
+
     # 1. 메모리 초기화 (새로운 대화 시작)
     manager.create_new_memory()
-    
+
     print("--- 대화 시작 (AI: 치피) ---")
 
+    # 디바이스 시리얼 (env에서 자동 읽음)
+    device_serial = os.environ.get("DEVICE_SERIAL")
     # 디바이스 시리얼 (env에서 자동 읽음)
     device_serial = os.environ.get("DEVICE_SERIAL")

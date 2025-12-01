@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 # 한글 출력 깨짐 방지 (Python 3.7.3 호환)
@@ -105,12 +106,6 @@ SLEEP_TIMEOUT = float(os.environ.get("SLEEP_TIMEOUT", "10.0"))
 VAD_ENERGY_THRESHOLD = float(os.environ.get("VAD_ENERGY_THRESHOLD", "0.005"))
 VAD_SILENCE_DURATION = float(os.environ.get("VAD_SILENCE_DURATION", "0.8"))
 VAD_MIN_SPEECH_DURATION = float(os.environ.get("VAD_MIN_SPEECH_DURATION", "0.3"))
-VAD_MAX_RECORDING_DURATION = float(
-    os.environ.get("VAD_MAX_RECORDING_DURATION", "10.0")
-)  # 최대 녹음 시간 (초)
-VAD_ENERGY_DROP_RATIO = float(
-    os.environ.get("VAD_ENERGY_DROP_RATIO", "0.5")
-)  # 에너지 감소 비율 (0.5 = 50% 이하)
 
 # 검증
 if not AZURE_SPEECH_API_KEY or not AZURE_SPEECH_REGION:
@@ -433,7 +428,7 @@ def calculate_rms(audio_data):
 
 
 class EnergyBasedVAD:
-    """에너지 기반 Voice Activity Detection (시끄러운 환경 대응)"""
+    """에너지 기반 Voice Activity Detection"""
 
     def __init__(
         self,
@@ -441,19 +436,15 @@ class EnergyBasedVAD:
         silence_duration=1.0,
         min_speech_duration=0.3,
         chunk_duration=0.1,
-        max_recording_duration=10.0,
-        energy_drop_ratio=0.5,
     ):
         self.energy_threshold = energy_threshold
         self.silence_duration = silence_duration
         self.min_speech_duration = min_speech_duration
         self.chunk_duration = chunk_duration
-        self.max_recording_duration = max_recording_duration  # 최대 녹음 시간 (초)
-        self.energy_drop_ratio = energy_drop_ratio  # 에너지 감소 비율 (0.5 = 50% 이하)
 
     def record(self, on_start=None, on_stop=None, filename=None):
         """
-        음성을 감지하고 녹음합니다 (시끄러운 환경 대응 개선).
+        음성을 감지하고 녹음합니다.
 
         Returns:
             오디오 데이터 (bytes) 또는 None
@@ -465,11 +456,6 @@ class EnergyBasedVAD:
         silence_chunks = 0
         speech_chunks = 0
         speech_started = False
-
-        # 시끄러운 환경 대응을 위한 변수들
-        peak_energy = 0.0  # 음성 중 최고 에너지
-        recent_energies = []  # 최근 에너지 값들 (평균 계산용)
-        max_chunks = int(self.max_recording_duration / self.chunk_duration)
 
         silence_chunks_threshold = int(self.silence_duration / self.chunk_duration)
         min_speech_chunks = int(self.min_speech_duration / self.chunk_duration)
@@ -487,120 +473,41 @@ class EnergyBasedVAD:
                 filename=filename,
             )
 
-            for chunk_idx, chunk in enumerate(chunks):
+            for chunk in chunks:
                 energy = calculate_rms(chunk)
-
-                # 최대 녹음 시간 초과 체크
-                if chunk_idx >= max_chunks:
-                    if speech_started and speech_chunks >= min_speech_chunks:
-                        logger.info(
-                            f"최대 녹음 시간 ({self.max_recording_duration}초) 초과, 녹음 종료"
-                        )
-                        recorder.done()
-                        if recorder._process:
-                            recorder._process.terminate()
-                        if on_stop:
-                            on_stop()
-                        break
-                    elif speech_started:
-                        logger.warning(
-                            "최대 녹음 시간 초과했지만 음성이 너무 짧음, 재시작"
-                        )
-                        speech_started = False
-                        speech_chunks = 0
-                        silence_chunks = 0
-                        audio_chunks = []
-                        peak_energy = 0.0
-                        recent_energies = []
-                        continue
 
                 if not speech_started:
                     if energy > self.energy_threshold:
                         speech_started = True
                         speech_chunks = 1
-                        peak_energy = energy
-                        recent_energies = [energy]
                         audio_chunks.append(chunk)
                         if on_start:
                             on_start()
-                        logger.info(f"음성 감지됨 (에너지: {energy:.4f})")
+                        logger.info("음성 감지됨")
                 else:
                     audio_chunks.append(chunk)
-                    speech_chunks += 1
-
-                    # 최고 에너지 업데이트
-                    if energy > peak_energy:
-                        peak_energy = energy
-
-                    # 최근 에너지 추적 (최근 5개 청크)
-                    recent_energies.append(energy)
-                    if len(recent_energies) > 5:
-                        recent_energies.pop(0)
-
-                    # 평균 에너지 계산
-                    avg_recent_energy = (
-                        sum(recent_energies) / len(recent_energies)
-                        if recent_energies
-                        else 0.0
-                    )
-
-                    # 종료 조건 1: 절대 임계값 기반 침묵 (기존 방식)
-                    if energy <= self.energy_threshold:
-                        silence_chunks += 1
-                    else:
+                    if energy > self.energy_threshold:
+                        speech_chunks += 1
                         silence_chunks = 0
-
-                    # 종료 조건 2: 상대적 에너지 감소 (시끄러운 환경 대응)
-                    # 에너지가 최고치의 일정 비율 이하로 지속적으로 감소하면 종료
-                    relative_drop_threshold = peak_energy * self.energy_drop_ratio
-                    is_low_relative_energy = energy < relative_drop_threshold
-
-                    # 종료 조건 3: 최근 평균 에너지가 최고치의 일정 비율 이하
-                    is_avg_low = avg_recent_energy < relative_drop_threshold
-
-                    # 종료 판단: 절대 침묵 OR (상대적 감소 + 연속 낮은 에너지)
-                    should_end = False
-                    end_reason = ""
-
-                    if silence_chunks >= silence_chunks_threshold:
-                        # 기존 방식: 절대 임계값 이하로 충분히 침묵
-                        should_end = True
-                        end_reason = "절대 침묵 감지"
-                    elif (
-                        speech_chunks >= min_speech_chunks
-                        and is_low_relative_energy
-                        and is_avg_low
-                    ):
-                        # 새로운 방식: 상대적으로 에너지가 크게 감소
-                        # 추가 조건: 최소 0.5초 이상 낮은 에너지 유지
-                        low_energy_chunks = sum(
-                            1 for e in recent_energies if e < relative_drop_threshold
-                        )
-                        if low_energy_chunks >= 3:  # 최근 5개 중 3개 이상이 낮으면
-                            should_end = True
-                            end_reason = f"상대적 에너지 감소 감지 (최고: {peak_energy:.4f}, 현재: {energy:.4f})"
-
-                    if should_end:
-                        if speech_chunks >= min_speech_chunks:
-                            logger.info(f"음성 종료 감지됨: {end_reason}")
-                            recorder.done()
-                            if recorder._process:
-                                recorder._process.terminate()
-                                time.sleep(0.05)
-                            if on_stop:
-                                on_stop()
-                            break
-                        else:
-                            # 너무 짧은 음성, 재시작
-                            logger.debug(
-                                f"너무 짧은 음성 ({speech_chunks} 청크), 재시작"
-                            )
-                            speech_started = False
-                            speech_chunks = 0
-                            silence_chunks = 0
-                            audio_chunks = []
-                            peak_energy = 0.0
-                            recent_energies = []
+                    else:
+                        silence_chunks += 1
+                        # 충분한 침묵이 감지되면 즉시 종료
+                        if silence_chunks >= silence_chunks_threshold:
+                            if speech_chunks >= min_speech_chunks:
+                                recorder.done()
+                                if recorder._process:
+                                    recorder._process.terminate()
+                                    time.sleep(0.05)
+                                if on_stop:
+                                    on_stop()
+                                logger.info("음성 종료 감지됨")
+                                break
+                            else:
+                                # 너무 짧은 음성, 재시작
+                                speech_started = False
+                                speech_chunks = 0
+                                silence_chunks = 0
+                                audio_chunks = []
 
         if audio_chunks and speech_chunks >= min_speech_chunks:
             # 오디오 데이터 합치기
@@ -663,6 +570,108 @@ def _contains_trigger_word(text, trigger_words):
         return False
     text_lower = text.lower()
     return any(trigger in text_lower for trigger in trigger_words)
+
+
+def _find_servo_script_path():
+    """서보 스크립트 경로 찾기"""
+    # 현재 파일의 디렉토리 기준으로 경로 찾기
+    main_file_dir = os.path.dirname(os.path.abspath(__file__))
+    main_file_parent = os.path.dirname(main_file_dir)
+
+    # 여러 가능한 경로 시도
+    possible_paths = [
+        # 현재 디렉토리 기준 (src/ai-voice/servo/examples/plant_shaker.py)
+        os.path.join(main_file_dir, "servo", "examples", "plant_shaker.py"),
+        # 상위 디렉토리 기준
+        os.path.join(main_file_parent, "servo", "examples", "plant_shaker.py"),
+        # 홈 디렉토리 기준 (~/chytonpide/servo/examples/plant_shaker.py)
+        os.path.expanduser("~/chytonpide/servo/examples/plant_shaker.py"),
+        # 절대 경로 (라즈베리파이 기본 경로)
+        "/home/pi/chytonpide/servo/examples/plant_shaker.py",
+    ]
+
+    for path in possible_paths:
+        abs_path = os.path.abspath(os.path.expanduser(path))
+        if os.path.exists(abs_path):
+            logger.info(f"서보 스크립트 경로 찾음: {abs_path}")
+            return abs_path
+
+    logger.warning("서보 스크립트를 찾을 수 없습니다. 가능한 경로:")
+    for path in possible_paths:
+        logger.warning(f"  - {os.path.abspath(os.path.expanduser(path))}")
+    return None
+
+
+def _run_servo_plant_shake():
+    """서보 모터로 화분 흔들기 실행 (subprocess 사용)"""
+    script_path = _find_servo_script_path()
+    if not script_path:
+        logger.error("서보 스크립트를 찾을 수 없습니다.")
+        return False
+
+    try:
+        logger.info(f"서보 모터 실행: {script_path}")
+        # sudo 권한으로 실행
+        result = subprocess.run(
+            ["sudo", "python3", script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,  # 최대 30초 대기
+            text=True,
+        )
+
+        if result.returncode == 0:
+            logger.info("서보 모터 실행 완료")
+            if result.stdout:
+                logger.debug(f"서보 출력: {result.stdout}")
+            return True
+        else:
+            logger.error(f"서보 모터 실행 실패 (코드: {result.returncode})")
+            if result.stderr:
+                logger.error(f"서보 오류: {result.stderr}")
+            return False
+
+    except subprocess.TimeoutExpired:
+        logger.error("서보 모터 실행 시간 초과 (30초)")
+        return False
+    except Exception as e:
+        logger.error(f"서보 모터 실행 오류: {e}", exc_info=True)
+        return False
+
+
+def _run_servo_async():
+    """서보 모터를 비동기로 실행 (별도 스레드에서)"""
+
+    def _servo_worker():
+        try:
+            _run_servo_plant_shake()
+        except Exception as e:
+            logger.error(f"서보 모터 비동기 실행 오류: {e}")
+
+    thread = threading.Thread(target=_servo_worker, daemon=True)
+    thread.start()
+    logger.info("서보 모터 비동기 실행 시작")
+    return thread
+
+
+def _contains_servo_keywords(text):
+    """서보 모터 실행 키워드 감지"""
+    if not text:
+        return False
+
+    servo_keywords = [
+        "화분 흔들어",
+        "화분 흔들어줘",
+        "모터 움직여",
+        "서보 움직여",
+        "흔들어줘",
+        "흔들어",
+        "모터 실행",
+        "서보 실행",
+    ]
+
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in servo_keywords)
 
 
 def main():
@@ -731,15 +740,11 @@ def main():
             energy_threshold=VAD_ENERGY_THRESHOLD,
             silence_duration=VAD_SILENCE_DURATION,
             min_speech_duration=VAD_MIN_SPEECH_DURATION,
-            max_recording_duration=VAD_MAX_RECORDING_DURATION,
-            energy_drop_ratio=VAD_ENERGY_DROP_RATIO,
         )
         logger.info(
             f"VAD 설정: energy_threshold={VAD_ENERGY_THRESHOLD}, "
             f"silence_duration={VAD_SILENCE_DURATION}, "
-            f"min_speech_duration={VAD_MIN_SPEECH_DURATION}, "
-            f"max_recording_duration={VAD_MAX_RECORDING_DURATION}, "
-            f"energy_drop_ratio={VAD_ENERGY_DROP_RATIO}"
+            f"min_speech_duration={VAD_MIN_SPEECH_DURATION}"
         )
 
         # Sleep/Wake 모드 관리
@@ -751,9 +756,19 @@ def main():
         main_trigger = trigger_words[0] if trigger_words else "치피"
         tts.speak(
             f"안녕하세요! 저는 {main_trigger}입니다. 대화하고 싶을 때 저를 불러주세요.",
+            f"안녕하세요! 저는 {main_trigger}입니다. 트리거 단어를 말씀해주세요.",
             language="ko",
             style="neutral",
         )
+
+        # 프로그램 시작 시 서보 모터 한 번 실행 (TTS와 동시에)
+        print("🔄 프로그램 시작: 서보 모터 실행 중...", flush=True)
+        logger.info("프로그램 시작: 서보 모터 자동 실행 (비동기)")
+        try:
+            _run_servo_async()
+            print("✅ 서보 모터 실행 시작 (백그라운드)\n", flush=True)
+        except Exception as e:
+            logger.warning(f"서보 모터 실행 중 오류: {e}")
 
         # 슬픈 톤을 사용할 키워드 목록
         sad_keywords = [
@@ -877,6 +892,14 @@ def main():
                     last_interaction_time = None
                     continue
 
+                # 서보 모터 실행 키워드 감지
+                if _contains_servo_keywords(user_text):
+                    logger.info("서보 모터 실행 키워드 감지!")
+                    print("🔄 서보 모터 실행 중...", flush=True)
+                    # 비동기로 실행 (서보 실행과 동시에 AI 응답도 처리 가능)
+                    _run_servo_async()
+                    print("✅ 서보 모터 실행 시작 (백그라운드)", flush=True)
+
                 # 슬픈 톤 키워드 감지
                 is_sad_topic = any(keyword in user_text for keyword in sad_keywords)
                 print(f"🔍 슬픈 토픽 감지: {is_sad_topic}", flush=True)
@@ -917,6 +940,10 @@ def main():
                 response_style = "sad" if is_sad_topic else "neutral"
                 pitch_shift = -10 if is_sad_topic else 0
                 print(f"🎤 응답 톤: {response_style}, 피치: {pitch_shift}", flush=True)
+
+                # TTS 재생과 동시에 서보 모터 실행 (비동기)
+                _run_servo_async()
+
                 tts.speak(
                     ai_response,
                     language="ko",
