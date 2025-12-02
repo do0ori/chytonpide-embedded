@@ -175,12 +175,12 @@ class DatabaseManager:
             print(f"❌ 디바이스 조회 오류: {e}")
             return None
 
-    def get_latest_sensor_data(self, device_id, limit=1):
+    def get_latest_sensor_data(self, serial, limit=1):
         """
-        최신 센서 데이터 조회 (30분 주기)
+        최신 센서 데이터 조회 (serial 기반)
 
         Args:
-            device_id: 디바이스 ID
+            serial: 디바이스 시리얼 번호
             limit: 조회 개수 (기본 1개 = 최신)
 
         Returns:
@@ -189,22 +189,24 @@ class DatabaseManager:
         try:
             cur = self.conn.cursor(cursor_factory=RealDictCursor)
 
-            cur.execute(
-                """
-                SELECT * FROM sensor_data
-                WHERE device_id = %s
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (device_id, limit),
-            )
-            data = cur.fetchall()
-            cur.close()
-
-            return [dict(row) for row in data] if data else []
+            try:
+                cur.execute(
+                    """
+                    SELECT * FROM sensor_data
+                    WHERE serial = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s
+                    """,
+                    (serial, limit),
+                )
+                data = cur.fetchall()
+                return [dict(row) for row in data] if data else []
+            finally:
+                cur.close()
 
         except Exception as e:
             print(f"❌ 센서 데이터 조회 오류: {e}")
+            self.conn.rollback()  # 트랜잭션 초기화
             return []
 
     def get_sensor_data_by_serial(self, serial):
@@ -281,11 +283,14 @@ class DatabaseManager:
 
         except Exception as e:
             print(f"❌ 로그 조회 오류: {e}")
+            self.conn.rollback()  # 트랜잭션 초기화
             return []
 
     def get_user_kits(self, user_id):
         """
         사용자가 소유한 키트 정보 조회
+        주의: kits 테이블 구조에 따라 이 메서드는 작동하지 않을 수 있습니다.
+        테이블 스키마를 확인하여 올바른 컬럼명을 사용하도록 수정이 필요합니다.
 
         Args:
             user_id: 사용자 ID
@@ -293,18 +298,23 @@ class DatabaseManager:
         Returns:
             list: 키트 정보 리스트
         """
-        try:
-            cur = self.conn.cursor(cursor_factory=RealDictCursor)
+        # kits 테이블에 user_id 컬럼이 존재하지 않으므로 비활성화
+        # 테이블 스키마를 확인한 후 올바른 컬럼명으로 수정 필요
+        return []
 
-            cur.execute("SELECT * FROM kits WHERE user_id = %s", (user_id,))
-            kits = cur.fetchall()
-            cur.close()
-
-            return [dict(kit) for kit in kits] if kits else []
-
-        except Exception as e:
-            print(f"❌ 키트 조회 오류: {e}")
-            return []
+        # try:
+        #     cur = self.conn.cursor(cursor_factory=RealDictCursor)
+        #
+        #     cur.execute("SELECT * FROM kits WHERE user_id = %s", (user_id,))
+        #     kits = cur.fetchall()
+        #     cur.close()
+        #
+        #     return [dict(kit) for kit in kits] if kits else []
+        #
+        # except Exception as e:
+        #     print(f"❌ 키트 조회 오류: {e}")
+        #     self.conn.rollback()  # 트랜잭션 초기화
+        #     return []
 
     def get_plant_status(self, temperature, humidity):
         """
@@ -453,66 +463,69 @@ class DatabaseManager:
                 context += "- 현재 센서 데이터를 불러올 수 없습니다.\n"
 
             # 디바이스 정보 추가 (있는 경우)
-            device_id = None
             if device_info:
                 context += "\n## 디바이스 정보\n"
                 device_name = device_info.get("name")
                 device_status = device_info.get("status")
-                device_id = device_info.get("id")
                 if device_name:
                     context += f"- 디바이스명: {device_name}\n"
                 if device_status:
                     context += f"- 상태: {device_status}\n"
 
             # 최근 센서 데이터 추세 분석 (있는 경우, 최근 3개)
-            if device_id:
-                recent_sensor_data = self.get_latest_sensor_data(device_id, limit=3)
-                if recent_sensor_data and len(recent_sensor_data) > 1:
-                    context += "\n## 최근 센서 데이터 추세 (참고용)\n"
-                    temps = [
-                        float(d.get("temperature", 0))
-                        for d in recent_sensor_data
-                        if d.get("temperature") is not None
-                    ]
-                    humids = [
-                        float(d.get("humidity", 0))
-                        for d in recent_sensor_data
-                        if d.get("humidity") is not None
-                    ]
-                    if temps:
-                        avg_temp = sum(temps) / len(temps)
-                        context += f"- 최근 평균 온도: {avg_temp:.1f}도\n"
-                        if len(temps) > 1:
-                            temp_change = temps[0] - temps[-1]
-                            trend = (
-                                "상승"
-                                if temp_change > 0
-                                else "하락" if temp_change < 0 else "유지"
-                            )
-                            context += f"- 온도 추세: {trend}\n"
-                    if humids:
-                        avg_humid = sum(humids) / len(humids)
-                        context += f"- 최근 평균 습도: {avg_humid:.1f}%\n"
-                        if len(humids) > 1:
-                            humid_change = humids[0] - humids[-1]
-                            trend = (
-                                "상승"
-                                if humid_change > 0
-                                else "하락" if humid_change < 0 else "유지"
-                            )
-                            context += f"- 습도 추세: {trend}\n"
+            # serial 기반으로 조회
+            recent_sensor_data = self.get_latest_sensor_data(device_serial, limit=3)
+            if recent_sensor_data and len(recent_sensor_data) > 1:
+                context += "\n## 최근 센서 데이터 추세 (참고용)\n"
+                temps = [
+                    float(d.get("temperature", 0))
+                    for d in recent_sensor_data
+                    if d.get("temperature") is not None
+                ]
+                humids = [
+                    float(d.get("humidity", 0))
+                    for d in recent_sensor_data
+                    if d.get("humidity") is not None
+                ]
+                if temps:
+                    avg_temp = sum(temps) / len(temps)
+                    context += f"- 최근 평균 온도: {avg_temp:.1f}도\n"
+                    if len(temps) > 1:
+                        temp_change = temps[0] - temps[-1]
+                        trend = (
+                            "상승"
+                            if temp_change > 0
+                            else "하락" if temp_change < 0 else "유지"
+                        )
+                        context += f"- 온도 추세: {trend}\n"
+                if humids:
+                    avg_humid = sum(humids) / len(humids)
+                    context += f"- 최근 평균 습도: {avg_humid:.1f}%\n"
+                    if len(humids) > 1:
+                        humid_change = humids[0] - humids[-1]
+                        trend = (
+                            "상승"
+                            if humid_change > 0
+                            else "하락" if humid_change < 0 else "유지"
+                        )
+                        context += f"- 습도 추세: {trend}\n"
 
             # 사용자 키트 정보 추가 (있는 경우)
-            if user_id:
-                kits = self.get_user_kits(user_id)
-                if kits:
-                    context += "\n## 사용자 키트 정보\n"
-                    context += f"- 보유 키트 수: {len(kits)}개\n"
-                    # 첫 번째 키트 정보만 간단히 추가
-                    first_kit = kits[0]
-                    kit_name = first_kit.get("name") or first_kit.get("plant_name")
-                    if kit_name:
-                        context += f"- 키트명: {kit_name}\n"
+            # 주의: kits 테이블 구조에 따라 get_user_kits 메서드가 작동하지 않을 수 있음
+            # if user_id:
+            #     try:
+            #         kits = self.get_user_kits(user_id)
+            #         if kits:
+            #             context += "\n## 사용자 키트 정보\n"
+            #             context += f"- 보유 키트 수: {len(kits)}개\n"
+            #             # 첫 번째 키트 정보만 간단히 추가
+            #             first_kit = kits[0]
+            #             kit_name = first_kit.get("name") or first_kit.get("plant_name")
+            #             if kit_name:
+            #                 context += f"- 키트명: {kit_name}\n"
+            #     except Exception as e:
+            #         # 키트 조회 실패 시 무시하고 계속 진행
+            #         pass
 
             # 최근 사용 로그 추가 (있는 경우, 최근 3개만)
             if user_id:
