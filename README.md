@@ -59,73 +59,15 @@
 
 ## 🏗️ 아키텍처
 
-```mermaid
-flowchart TB
+<img width="2597" height="1539" alt="image" src="https://github.com/user-attachments/assets/f07029b9-7851-4a9f-b3bd-30e2f41d94f6" />
 
-%% --- ESP32 그룹 ---
-subgraph ESP32["ESP32-S3 (센서 & 디스플레이 제어)"]
-    TH["온습도 센서 SHT31"] --> MCU["ESP32-S3"]
-    MCU --> LCD["ILI9341 LCD 디스플레이"]
-    MCU --> R["5V 릴레이"] --> L["식물등"]
-
-    MCU -. 온습도 데이터 .-> API
-    API -. LED 제어 .-> MCU
-    API -. 감정 표정 제어 .-> MCU
-end
-
-%% --- Raspberry Pi 그룹 ---
-subgraph RPI["Raspberry Pi Zero WH (AI 음성 처리)"]
-    RPI_MCU["Raspberry Pi Zero WH"]
-
-    MIC["AIY Voice Bonnet 마이크"] --> RPI_MCU
-    RPI_MCU --> STT["STT<br/>(Google Cloud Speech-to-Text)"]
-    STT --> LLM["LLM<br/>(Azure OpenAI GPT-4o)"]
-    LLM --> TTS["TTS<br/>(Superton API)"]
-    TTS --> SPK["스피커"]
-
-    RPI_MCU --> MOTOR["SG90 서보모터<br/>(화분 흔들기)"]
-
-    LLM -. 조명 제어 요청 .-> API
-    LLM -. 감정 표정 요청 .-> API
-    LLM -. 컨텍스트 조회 .-> DB_NODE
-end
-
-%% --- Rails 서버 그룹 ---
-subgraph SERVER_GROUP["Ruby on Rails 서버"]
-    API["RESTful API<br/>- 센서 데이터 수신<br/>- LED 제어<br/>- 감정 표정 제어"]
-end
-
-%% --- PostgreSQL DB 그룹 ---
-subgraph DB_GROUP["PostgreSQL 데이터베이스"]
-    DB_NODE["데이터베이스<br/>- 사용자 정보<br/>- 키트 정보<br/>- 온습도 데이터"]
-end
-
-%% --- 서버-DB 연결 ---
-API -. 센서 데이터 저장 .-> DB_NODE
-DB_NODE -. 키트 정보<br/>사용자 정보<br/>온습도 데이터 .-> LLM
-
-%% --- 전원 ---
-P["Type-C 전원"] --> MCU
-P --> RPI_MCU
-```
 
 ## 🤖 AI 음성 상호작용
 
 ### 음성 처리 파이프라인
 
-```
-음성 입력 (AIY Voice Bonnet 마이크)
-  → STT (Google Cloud Speech-to-Text API)
-    → 트리거 단어 감지 (선택적)
-      → LLM (Azure OpenAI GPT-4o)
-        → 컨텍스트 주입 (DB: 사용자 정보, 키트 정보, 온습도 데이터)
-          → 응답 생성
-            → 감정 감지 (키워드 기반)
-              → TTS (Superton API)
-                → 음성 출력 (스피커)
-                → 서보 모터 실행 (화분 흔들기)
-                → 서버 API 호출 (LCD 감정 표정 업데이트, LED 제어)
-```
+<img width="3043" height="1314" alt="image" src="https://github.com/user-attachments/assets/1d9de018-d91d-475b-8d8a-546cb585673d" />
+
 
 ### 주요 기능
 
