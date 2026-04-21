@@ -25,7 +25,7 @@ public:
   void onStateUpdate(StateUpdateCallback cb) { stateCallback = cb; }
 
   // Connection state
-  bool isConnected() const { return client.connected(); }
+  bool isConnected() { return client.connected(); }
 
 private:
   // Server config
