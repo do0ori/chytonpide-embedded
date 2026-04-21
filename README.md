@@ -95,9 +95,8 @@
 
 ## 📡 네트워크 아키텍처 (HTTP → TCP Server-Push)
 
-초기 HTTP polling 구조에서 LCD 감정 애니메이션이 네트워크 요청에 의해 주기적으로 끊기는 문제가 있었습니다.
-메인 루프에서 세 개의 컨트롤러가 각자 HTTP 요청을 직렬로 실행하면서 최대 1.5초 블로킹이 발생했고,
-이 구간 동안 `roboEyes.update()` 호출이 막혀 프레임이 스킵됐습니다.
+초기 HTTP polling 구조에서 LCD 감정 애니메이션이 네트워크 요청 중에 주기적으로 끊기는 문제가 있었습니다.
+메인 루프에서 세 개의 컨트롤러가 각자 동기식 `HTTPClient` 호출을 직렬로 실행하는 동안 `roboEyes.update()`가 호출되지 못해 프레임이 스킵됐습니다.
 
 이를 해결하기 위해 **영구 TCP 연결 + 서버 푸시 모델**로 전환했습니다.
 
@@ -105,9 +104,9 @@
 
 ```
 HTTP (기존):
-  Device --(GET /devices/:serial/led, 매 1초)--> Server    (블로킹)
-  Device --(GET /devices/:serial/lcd, 매 2초)--> Server    (블로킹)
-  Device --(POST /sensor_data,       매 30초)--> Server    (블로킹)
+  Device --(GET /devices/:serial/led, 매 1초)--> Server    (동기 요청, 블로킹)
+  Device --(GET /devices/:serial/lcd, 매 2초)--> Server    (동기 요청, 블로킹)
+  Device --(POST /sensor_data,       매 30초)--> Server    (동기 요청, 블로킹)
   → 매 요청마다 TCP handshake + TLS + HTTP 파싱 + 소켓 종료
 
 TCP (개선):
@@ -118,19 +117,23 @@ TCP (개선):
   → 단일 영구 연결, polling 제거
 ```
 
-### 측정 결과
+### 개선 사항
 
-| 지표 | Before (HTTP) | After (TCP) | 개선 |
-| --- | --- | --- | --- |
-| `loop()` 당 최대 네트워크 블로킹 | ~1.5s | ~1ms | **1500×** |
-| LED/LCD 상태 변경 반영 지연 | 평균 0.5~1s | 즉시 (push) | O(s) → O(ms) |
-| 디바이스당 분당 요청 수 | 90회 | 2회 | **45×** |
-| TCP handshake | 매 요청 | 1회 (연결 수립 시) | 영구 연결 |
+| 항목 | Before (HTTP) | After (TCP) |
+| --- | --- | --- |
+| 디바이스당 분당 요청 수 | 90회 (LED 60 + LCD 30) | 2회 (sensor + ping) |
+| 연결 모델 | 매 요청마다 handshake/종료 | 영구 연결 1개 재사용 |
+| LED/LCD 상태 변경 반영 | polling 주기 대기 | 서버 push로 즉시 |
+| 메인 루프 HTTP 블로킹 | 요청 중 `loop()` 정지 | 제거 (비차단 `poll()`) |
+| LCD 애니메이션 끊김 | 발생 | 체감상 해소 (실기 확인) |
+
+> 정확한 블로킹 시간 · 프레임 드롭 수치는 아직 측정하지 않았습니다.
+> 시리얼 로그로 `micros()` 기반 실측을 추가할 예정 (후속 작업).
 
 ### 핵심 설계 포인트
 
 -   **Polling → Push:** LED/LCD 상태는 디바이스가 물어볼 필요가 없으므로 서버가 변경 시점에만 push
--   **비차단 수신:** `loop()`에서 `tcpClient.poll()`은 `client.available()` 체크 후 데이터 없으면 즉시 리턴 (0ms)
+-   **비차단 수신:** `loop()`에서 `tcpClient.poll()`은 `client.available()` 체크 후 데이터 없으면 즉시 리턴
 -   **컨트롤러 역할 재정의:** `RelayLedController`, `FaceEmotionController`를 폴러에서 **액추에이터**로 전환
 -   **지수 백오프 재접속:** 1s → 2s → 4s → ... → 30s, WiFi 순단/서버 재시작에도 자동 복구
 -   **Keepalive:** 30초 주기 ping/pong, 60초 타임아웃으로 좀비 연결 정리
@@ -215,7 +218,7 @@ chytonpide/
 
 -   단일 영구 TCP 연결 + newline-delimited JSON 프로토콜
 -   서버 상태 변경 시 디바이스에 즉시 push (polling 제거)
--   메인 루프 네트워크 블로킹 **최대 1.5s → ~1ms** (LCD 애니메이션 끊김 해소)
+-   메인 루프의 동기식 HTTP 블로킹 제거로 LCD 애니메이션 끊김 해소 (실기 확인)
 -   상세: [`📡 네트워크 아키텍처`](#-네트워크-아키텍처-http--tcp-server-push) 섹션
 
 ## 🔧 기술 스택
